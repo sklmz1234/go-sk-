@@ -46,7 +46,7 @@ export default function AppLayout() {
     <Layout style={{ minHeight: '100vh' }}>
       <Header style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '0 16px' }}>
         <Link to="/" style={{ color: '#fff', fontSize: 18, fontWeight: 600, whiteSpace: 'nowrap' }}>
-          GoEcom 商城
+          sk商城
         </Link>
         {/* key=keyword：URL 里的关键词变化时强制重建输入框，保证框内文字与 URL 同步。
             flex:1 + minWidth:0 让搜索框在窄屏下压缩而不是把登录按钮挤出屏幕。
@@ -90,7 +90,7 @@ export default function AppLayout() {
         <Outlet />
       </Content>
       <Footer style={{ textAlign: 'center', color: '#999' }}>
-        GoEcom 商城 · 学习项目
+        sk商城 · 个人学习项目
       </Footer>
     </Layout>
   );
