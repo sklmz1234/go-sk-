@@ -3,6 +3,7 @@ import { App, Button, Card, Form, Input } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { login } from '../api';
 import { useSessionStore } from '../stores/session';
+import AuthPage from '../components/AuthPage';
 
 export default function Login() {
   const [searchParams] = useSearchParams();
@@ -31,7 +32,7 @@ export default function Login() {
   }
 
   return (
-    <div style={{ maxWidth: 400, margin: '48px auto', padding: '0 16px' }}>
+    <AuthPage>
       <Card title="登录">
         <Form layout="vertical" onFinish={onFinish}>
           <Form.Item
@@ -62,6 +63,6 @@ export default function Login() {
           </div>
         </Form>
       </Card>
-    </div>
+    </AuthPage>
   );
 }

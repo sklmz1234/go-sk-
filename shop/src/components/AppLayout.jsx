@@ -1,5 +1,5 @@
 import { Layout, Input, Button, Dropdown, Space } from 'antd';
-import { Link, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSessionStore } from '../stores/session';
 
 const { Header, Content, Footer } = Layout;
@@ -15,6 +15,11 @@ export default function AppLayout() {
   const token = useSessionStore((s) => s.token);
   const user = useSessionStore((s) => s.user);
   const clearSession = useSessionStore((s) => s.clearSession);
+
+  // 登录/注册页是"账号流程"不是"购物流程"：顶栏藏搜索框，
+  // 内容区也让出 padding/maxWidth，给 AuthPage 的装饰背景整幅画布。
+  const location = useLocation();
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
 
   const handleSearch = (value) => {
     const kw = value.trim();
@@ -44,15 +49,18 @@ export default function AppLayout() {
           GoEcom 商城
         </Link>
         {/* key=keyword：URL 里的关键词变化时强制重建输入框，保证框内文字与 URL 同步。
-            flex:1 + minWidth:0 让搜索框在窄屏下压缩而不是把登录按钮挤出屏幕。 */}
-        <Input.Search
-          key={keyword}
-          defaultValue={keyword}
-          placeholder="搜索商品"
-          allowClear
-          onSearch={handleSearch}
-          style={{ flex: 1, maxWidth: 420, minWidth: 0 }}
-        />
+            flex:1 + minWidth:0 让搜索框在窄屏下压缩而不是把登录按钮挤出屏幕。
+            登录/注册页不渲染搜索框——账号流程里没有购物搜索的语境。 */}
+        {!isAuthPage && (
+          <Input.Search
+            key={keyword}
+            defaultValue={keyword}
+            placeholder="搜索商品"
+            allowClear
+            onSearch={handleSearch}
+            style={{ flex: 1, maxWidth: 420, minWidth: 0 }}
+          />
+        )}
         <div style={{ marginLeft: 'auto' }}>
           {token ? (
             <Dropdown menu={userMenu}>
@@ -70,7 +78,15 @@ export default function AppLayout() {
           )}
         </div>
       </Header>
-      <Content style={{ padding: '24px', maxWidth: 1200, width: '100%', margin: '0 auto' }}>
+      {/* 登录/注册页让 Content 变成无约束的 flex 容器，AuthPage（flex:1）才能
+          撑满整个内容区，装饰背景不会被 1200px 最大宽度截断 */}
+      <Content
+        style={
+          isAuthPage
+            ? { padding: 0, display: 'flex', flexDirection: 'column' }
+            : { padding: '24px', maxWidth: 1200, width: '100%', margin: '0 auto' }
+        }
+      >
         <Outlet />
       </Content>
       <Footer style={{ textAlign: 'center', color: '#999' }}>

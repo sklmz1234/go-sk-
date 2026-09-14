@@ -3,6 +3,7 @@ import { App, Button, Card, Form, Input } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { login, register } from '../api';
 import { useSessionStore } from '../stores/session';
+import AuthPage from '../components/AuthPage';
 
 // 校验规则对齐后端 RegisterRequest 的 binding（dto.go:19-23）：
 // username required、email 格式、password min=6。前端先拦一道，体验比等 400 好。
@@ -46,7 +47,7 @@ export default function Register() {
   }
 
   return (
-    <div style={{ maxWidth: 400, margin: '48px auto', padding: '0 16px' }}>
+    <AuthPage>
       <Card title="注册">
         <Form layout="vertical" onFinish={onFinish}>
           <Form.Item
@@ -105,6 +106,6 @@ export default function Register() {
           </div>
         </Form>
       </Card>
-    </div>
+    </AuthPage>
   );
 }
