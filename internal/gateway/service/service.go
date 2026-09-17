@@ -48,6 +48,20 @@ func (s *Service) Login(ctx context.Context, req model.LoginRequest) (*model.Log
 	return &model.LoginResponseDTO{Token: token, User: userToDTO(u)}, nil
 }
 
+// GetRandomAddress（阶段 5B）：随机 mock 收货信息，读公开数据池不需要身份。
+func (s *Service) GetRandomAddress(ctx context.Context) (*model.AddressDTO, error) {
+	a, err := s.userClient.GetRandomAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &model.AddressDTO{
+		ID:           a.GetId(),
+		ReceiverName: a.GetReceiverName(),
+		Phone:        a.GetPhone(),
+		Address:      a.GetAddress(),
+	}, nil
+}
+
 func (s *Service) GetProduct(ctx context.Context, id uint64) (*model.ProductDTO, error) {
 	p, err := s.productClient.GetProduct(ctx, id)
 	if err != nil {
@@ -143,6 +157,66 @@ func (s *Service) CancelOrder(ctx context.Context, userID, id uint64) (*model.Or
 		return nil, err
 	}
 	return orderToDTO(o), nil
+}
+
+// PayOrder（阶段 5B 模拟支付）：PENDING → PAID。
+func (s *Service) PayOrder(ctx context.Context, userID, id uint64) (*model.OrderDTO, error) {
+	o, err := s.orderClient.PayOrder(identity.InjectOutgoing(ctx, userID), id)
+	if err != nil {
+		return nil, err
+	}
+	return orderToDTO(o), nil
+}
+
+// —— 购物车（阶段 5B）：全部要求登录，身份注入与订单同一模式 ——
+// 购物车的方法签名里没有 userID 参数、下游请求里也没有 user_id 字段，
+// 身份只走 metadata——和"密码不进 proto"是同一个分层洁癖。
+
+func (s *Service) AddCartItem(ctx context.Context, userID uint64, req model.AddCartItemRequest) (*model.CartResponse, error) {
+	resp, err := s.productClient.AddCartItem(identity.InjectOutgoing(ctx, userID), req.ProductID, req.Quantity)
+	if err != nil {
+		return nil, err
+	}
+	return cartToDTO(resp), nil
+}
+
+func (s *Service) ListCart(ctx context.Context, userID uint64) (*model.CartResponse, error) {
+	resp, err := s.productClient.ListCart(identity.InjectOutgoing(ctx, userID))
+	if err != nil {
+		return nil, err
+	}
+	return cartToDTO(resp), nil
+}
+
+func (s *Service) UpdateCartItem(ctx context.Context, userID, productID uint64, req model.UpdateCartItemRequest) (*model.CartResponse, error) {
+	resp, err := s.productClient.UpdateCartItem(identity.InjectOutgoing(ctx, userID), productID, req.Quantity)
+	if err != nil {
+		return nil, err
+	}
+	return cartToDTO(resp), nil
+}
+
+func (s *Service) RemoveCartItems(ctx context.Context, userID uint64, req model.RemoveCartItemsRequest) (*model.CartResponse, error) {
+	resp, err := s.productClient.RemoveCartItems(identity.InjectOutgoing(ctx, userID), req.ProductIDs)
+	if err != nil {
+		return nil, err
+	}
+	return cartToDTO(resp), nil
+}
+
+func cartToDTO(resp *productpb.CartResponse) *model.CartResponse {
+	items := make([]*model.CartItemDTO, 0, len(resp.GetItems()))
+	for _, it := range resp.GetItems() {
+		items = append(items, &model.CartItemDTO{
+			ProductID: it.GetProductId(),
+			Name:      it.GetName(),
+			ImageURL:  it.GetImageUrl(),
+			PriceYuan: float64(it.GetPriceCents()) / 100,
+			Stock:     it.GetStock(),
+			Quantity:  it.GetQuantity(),
+		})
+	}
+	return &model.CartResponse{Items: items, TotalQuantity: resp.GetTotalQuantity()}
 }
 
 func userToDTO(u *userpb.User) *model.UserDTO {

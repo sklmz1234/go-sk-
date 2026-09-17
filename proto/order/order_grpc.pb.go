@@ -23,6 +23,7 @@ const (
 	OrderService_GetOrder_FullMethodName     = "/order.OrderService/GetOrder"
 	OrderService_ListMyOrders_FullMethodName = "/order.OrderService/ListMyOrders"
 	OrderService_CancelOrder_FullMethodName  = "/order.OrderService/CancelOrder"
+	OrderService_PayOrder_FullMethodName     = "/order.OrderService/PayOrder"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -39,6 +40,11 @@ type OrderServiceClient interface {
 	// CancelOrder 在阶段 3b 实现：PENDING → CANCELLED 单方向流转 + RestoreStock
 	// 回补库存。契约先定在这里，避免 3b 再改 proto 重新生成。
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
+	// PayOrder（阶段 5B 模拟支付）：PENDING → PAID 单方向流转。没有真实支付
+	// 渠道，"支付成功"就是这一次状态迁移——条件更新（WHERE status='PENDING'）
+	// 保证并发支付/取消只有一个能命中。真实支付对接后，这里换成
+	// "支付回调驱动"的迁移入口即可，状态机本身不用动。
+	PayOrder(ctx context.Context, in *PayOrderRequest, opts ...grpc.CallOption) (*PayOrderResponse, error)
 }
 
 type orderServiceClient struct {
@@ -89,6 +95,16 @@ func (c *orderServiceClient) CancelOrder(ctx context.Context, in *CancelOrderReq
 	return out, nil
 }
 
+func (c *orderServiceClient) PayOrder(ctx context.Context, in *PayOrderRequest, opts ...grpc.CallOption) (*PayOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PayOrderResponse)
+	err := c.cc.Invoke(ctx, OrderService_PayOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -103,6 +119,11 @@ type OrderServiceServer interface {
 	// CancelOrder 在阶段 3b 实现：PENDING → CANCELLED 单方向流转 + RestoreStock
 	// 回补库存。契约先定在这里，避免 3b 再改 proto 重新生成。
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
+	// PayOrder（阶段 5B 模拟支付）：PENDING → PAID 单方向流转。没有真实支付
+	// 渠道，"支付成功"就是这一次状态迁移——条件更新（WHERE status='PENDING'）
+	// 保证并发支付/取消只有一个能命中。真实支付对接后，这里换成
+	// "支付回调驱动"的迁移入口即可，状态机本身不用动。
+	PayOrder(context.Context, *PayOrderRequest) (*PayOrderResponse, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -124,6 +145,9 @@ func (UnimplementedOrderServiceServer) ListMyOrders(context.Context, *ListMyOrde
 }
 func (UnimplementedOrderServiceServer) CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelOrder not implemented")
+}
+func (UnimplementedOrderServiceServer) PayOrder(context.Context, *PayOrderRequest) (*PayOrderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PayOrder not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -218,6 +242,24 @@ func _OrderService_CancelOrder_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_PayOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PayOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).PayOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_PayOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).PayOrder(ctx, req.(*PayOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -240,6 +282,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelOrder",
 			Handler:    _OrderService_CancelOrder_Handler,
+		},
+		{
+			MethodName: "PayOrder",
+			Handler:    _OrderService_PayOrder_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

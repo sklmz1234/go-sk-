@@ -108,9 +108,31 @@ func (c *UserClient) Login(ctx context.Context, username, password string) (stri
 	return res.token, res.user, nil
 }
 
+// GetRandomAddress（阶段 5B）：随机取一条 mock 收货信息。读公开数据池，
+// 不需要调用方身份。
+func (c *UserClient) GetRandomAddress(ctx context.Context) (*userpb.Address, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultCallTimeout)
+	defer cancel()
+
+	resp, err := callWithBreaker(c.breaker, func() (*userpb.GetRandomAddressResponse, error) {
+		return c.client.GetRandomAddress(ctx, &userpb.GetRandomAddressRequest{})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetAddress(), nil
+}
+
 // ProductClient 封装对 product-service 的 gRPC 调用。
+//
+// 阶段 5B 起 product-service 进程暴露两个 gRPC service（ProductService +
+// CartService），本 client 同时持有两个 service 的桩——同一个 conn、同一个
+// 熔断器：熔断器保护的是"下游进程的可用性"，同进程的两个 service 共享
+// 熔断状态才是真实语义（拆开会让两个 breaker 各自计数，故障时各熔各的，
+// 半开状态的探测流量也翻倍）。
 type ProductClient struct {
 	client  productpb.ProductServiceClient
+	cart    productpb.CartServiceClient
 	breaker *gobreaker.CircuitBreaker
 }
 
@@ -124,6 +146,7 @@ func NewProductClient(target string, log *zap.Logger) (*ProductClient, error) {
 	}
 	return &ProductClient{
 		client:  productpb.NewProductServiceClient(conn),
+		cart:    productpb.NewCartServiceClient(conn),
 		breaker: newBreaker("product-service", log),
 	}, nil
 }
@@ -288,4 +311,57 @@ func (c *OrderClient) CancelOrder(ctx context.Context, id uint64) (*orderpb.Orde
 		return nil, err
 	}
 	return resp.GetOrder(), nil
+}
+
+// PayOrder（阶段 5B 模拟支付）：PENDING → PAID，ctx 需已注入调用方身份。
+func (c *OrderClient) PayOrder(ctx context.Context, id uint64) (*orderpb.Order, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultCallTimeout)
+	defer cancel()
+
+	resp, err := callWithBreaker(c.breaker, func() (*orderpb.PayOrderResponse, error) {
+		return c.client.PayOrder(ctx, &orderpb.PayOrderRequest{Id: id})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetOrder(), nil
+}
+
+// —— 购物车（阶段 5B）：四个方法的 ctx 都必须已由 service 层注入调用方
+// 身份（pkg/identity）——购物车是私密资源，下游全部方法都验 user_id。 ——
+
+func (c *ProductClient) AddCartItem(ctx context.Context, productID uint64, quantity int32) (*productpb.CartResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultCallTimeout)
+	defer cancel()
+
+	return callWithBreaker(c.breaker, func() (*productpb.CartResponse, error) {
+		return c.cart.AddItem(ctx, &productpb.AddCartItemRequest{ProductId: productID, Quantity: quantity})
+	})
+}
+
+func (c *ProductClient) ListCart(ctx context.Context) (*productpb.CartResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultCallTimeout)
+	defer cancel()
+
+	return callWithBreaker(c.breaker, func() (*productpb.CartResponse, error) {
+		return c.cart.ListCart(ctx, &productpb.ListCartRequest{})
+	})
+}
+
+func (c *ProductClient) UpdateCartItem(ctx context.Context, productID uint64, quantity int32) (*productpb.CartResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultCallTimeout)
+	defer cancel()
+
+	return callWithBreaker(c.breaker, func() (*productpb.CartResponse, error) {
+		return c.cart.UpdateItemQuantity(ctx, &productpb.UpdateCartItemRequest{ProductId: productID, Quantity: quantity})
+	})
+}
+
+func (c *ProductClient) RemoveCartItems(ctx context.Context, productIDs []uint64) (*productpb.CartResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultCallTimeout)
+	defer cancel()
+
+	return callWithBreaker(c.breaker, func() (*productpb.CartResponse, error) {
+		return c.cart.RemoveItems(ctx, &productpb.RemoveCartItemsRequest{ProductIds: productIDs})
+	})
 }

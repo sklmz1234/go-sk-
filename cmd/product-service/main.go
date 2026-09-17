@@ -102,7 +102,8 @@ func main() {
 		log.Fatal("attach gorm otel plugin", zap.Error(err))
 	}
 	// 带锁迁移，理由见 cmd/user-service/main.go：多副本并发建表竞态。
-	if err := database.Migrate(db, 30*time.Second, &model.Product{}, &model.StockRestore{}); err != nil {
+	// CartItem（阶段 5B）与 Product 同库：ListCart 的 JOIN 在单库内完成。
+	if err := database.Migrate(db, 30*time.Second, &model.Product{}, &model.StockRestore{}, &model.CartItem{}); err != nil {
 		log.Fatal("auto migrate failed", zap.Error(err))
 	}
 	repo := repository.NewGormRepository(db)
@@ -138,9 +139,16 @@ func main() {
 
 	svc := service.New(repo, log)
 
+	// CartService（阶段 5B）与 ProductService 同进程注册：共享同一个商品
+	// Repository（存在性检查命中缓存），但购物车有独立的 Repository（无
+	// 缓存/搜索装饰器，见 cart_repository.go 的包注释）。一个进程暴露两个
+	// gRPC service 是完全常规的形态——服务边界按业务划分，不按进程数。
+	cartSvc := service.NewCartService(repo, repository.NewGormCartRepository(db), log)
+
 	// 服务端埋点：提取上游 trace 上下文 + 每轮 RPC 建服务端 span。
 	grpcServer := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 	productpb.RegisterProductServiceServer(grpcServer, svc)
+	productpb.RegisterCartServiceServer(grpcServer, cartSvc)
 	reflection.Register(grpcServer)
 
 	// 同 user-service：注册标准健康检查服务，供 K8s 原生 grpc 探针使用，

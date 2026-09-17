@@ -131,3 +131,56 @@ type ListOrdersResponse struct {
 	Orders []*OrderDTO `json:"orders"`
 	Total  int64       `json:"total"`
 }
+
+// —— 购物车（阶段 5B）——
+
+// CartItemDTO 是购物车条目的 REST 视图。展示信息（名称/价格/图/库存）是
+// product-service JOIN 出来的实时值——购物车不存快照，价格快照的正确位置
+// 是订单（下单时刻给出），PriceYuan 仅供展示参考。
+type CartItemDTO struct {
+	ProductID uint64  `json:"product_id"`
+	Name      string  `json:"name"`
+	ImageURL  string  `json:"image_url"`
+	PriceYuan float64 `json:"price_yuan"`
+	Stock     int32   `json:"stock"`
+	Quantity  int32   `json:"quantity"`
+}
+
+// CartResponse 是四个购物车接口统一的响应形态：任何变更（加/改/删）都返回
+// 删改后的最新全量列表 + total_quantity（角标数字），前端拿一次响应即可
+// 同时刷新列表和角标。
+type CartResponse struct {
+	Items         []*CartItemDTO `json:"items"`
+	TotalQuantity int32          `json:"total_quantity"`
+}
+
+// AddCartItemRequest 对应 POST /api/v1/cart/items。quantity 是增量语义
+//（重复加购累加），上限 99 与下游 service 的校验对齐——网关先拦一层，
+// 非法请求不用打到 product-service。
+type AddCartItemRequest struct {
+	ProductID uint64 `json:"product_id" binding:"required"`
+	Quantity  int32  `json:"quantity" binding:"required,gt=0,lte=99"`
+}
+
+// UpdateCartItemRequest 对应 PUT /api/v1/cart/items/:productId，
+// quantity 是绝对值语义（购物车页 InputNumber"改成 N"）。
+type UpdateCartItemRequest struct {
+	Quantity int32 `json:"quantity" binding:"required,gt=0,lte=99"`
+}
+
+// RemoveCartItemsRequest 对应 DELETE /api/v1/cart/items（body 传 id 数组）。
+// DELETE 带 body 在 HTTP 规范里合法（语义是"删除这些资源"），fetch 也支持；
+// 结算清车传勾选项、单行删除传一个元素的数组，同一接口两种用法。
+type RemoveCartItemsRequest struct {
+	ProductIDs []uint64 `json:"product_ids" binding:"required,min=1"`
+}
+
+// AddressDTO（阶段 5B）是 mock 收货信息的 REST 视图，结算/支付页展示
+// "收货人 / 电话 / 地址"用。id 一起返回：以后升级真实地址簿时前端靠它
+// 记住"这次下单用的是哪条地址"。
+type AddressDTO struct {
+	ID           uint64 `json:"id"`
+	ReceiverName string `json:"receiver_name"`
+	Phone        string `json:"phone"`
+	Address      string `json:"address"`
+}

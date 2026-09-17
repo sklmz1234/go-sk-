@@ -121,3 +121,20 @@ func toProto(u *model.User) *userpb.User {
 		CreatedAt: u.CreatedAt.Unix(),
 	}
 }
+
+// GetRandomAddress（阶段 5B）：随机取一条 mock 收货信息。读公开数据池，
+// 不验身份——它不是任何用户的私密资源；"要不要登录才能看到"由网关的
+// 路由（挂在 auth 组下）决定，service 层不做重复裁决。
+func (s *Service) GetRandomAddress(ctx context.Context, _ *userpb.GetRandomAddressRequest) (*userpb.GetRandomAddressResponse, error) {
+	a, err := s.repo.GetRandomAddress(ctx)
+	if err != nil {
+		s.log.Warn("get random address failed", zap.Error(err))
+		return nil, apperrors.ToGRPCStatus(err)
+	}
+	return &userpb.GetRandomAddressResponse{Address: &userpb.Address{
+		Id:           a.ID,
+		ReceiverName: a.ReceiverName,
+		Phone:        a.Phone,
+		Address:      a.Address,
+	}}, nil
+}

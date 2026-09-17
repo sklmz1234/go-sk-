@@ -116,7 +116,9 @@ func main() {
 	// 带锁迁移：K8s 下 Deployment 是 2 副本，两个 Pod 同时启动时
 	// 裸 AutoMigrate 会抢建表（Error 1050 → CrashLoop）。GET_LOCK 命名锁
 	// 串行化后，先到者建表、后到者等锁再跑一遍幂等的 AutoMigrate。
-	if err := database.Migrate(db, 30*time.Second, &model.User{}); err != nil {
+	// Address（阶段 5B）是 mock 收货信息池（无 user_id 归属），见
+	// internal/user/model/address.go 的注释。
+	if err := database.Migrate(db, 30*time.Second, &model.User{}, &model.Address{}); err != nil {
 		log.Fatal("auto migrate failed", zap.Error(err))
 	}
 	repo := repository.NewGormRepository(db)

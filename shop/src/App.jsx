@@ -8,10 +8,11 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Orders from './pages/Orders';
 import OrderDetail from './pages/OrderDetail';
+import Cart from './pages/Cart';
 
 // 路由表与"页面-接口对照表"一一对应：
 //   公开：/ /products/:id /login /register
-//   登录：/orders /orders/:id（订单是私密资源，连浏览都要登录，与网关路由表一致）
+//   登录：/orders /orders/:id /cart（订单和购物车都是私密资源，与网关路由表一致）
 export default function App() {
   return (
     <BrowserRouter>
@@ -21,6 +22,14 @@ export default function App() {
           <Route path="/products/:id" element={<ProductDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route
+            path="/cart"
+            element={
+              <RequireAuth>
+                <Cart />
+              </RequireAuth>
+            }
+          />
           <Route
             path="/orders"
             element={

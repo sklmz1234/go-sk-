@@ -142,3 +142,62 @@ message Product {
   string description = 7;
   string image_url = 8;
 }
+
+// —— 阶段 5B：购物车 ——
+//
+// CartService 独立成 service 而不是塞进 ProductService：购物车虽然和商品
+// 同库（ListCart 要 JOIN products 拿实时信息），但它不是商品 CRUD 的延伸。
+// ProductService 背后的 Repository 接口被缓存/搜索两层装饰器包裹，把
+// 购物车方法加进去会让那份接口无谓膨胀——购物车不需要缓存（低频读写、
+// 数据强个人化没有共享收益）也不需要搜索。
+//
+// user_id 一律来自 gRPC metadata（pkg/identity），不进 message——与
+// ProductService 写路径同一约定：身份是横切关注点。
+service CartService {
+  // AddItem 增量加购：同商品重复加购数量累加（联合唯一键 + 原子 upsert），
+  // 不插新行。不校验库存——库存校验放在下单（409 兜底），避免"加购时有货、
+  // 结算时售罄"的双重校验语义打架。
+  rpc AddItem(AddCartItemRequest) returns (CartResponse);
+  rpc ListCart(ListCartRequest) returns (CartResponse);
+  // UpdateItemQuantity 绝对值语义：设置该商品数量为 quantity（不是增量）。
+  rpc UpdateItemQuantity(UpdateCartItemRequest) returns (CartResponse);
+  // RemoveItems 批量删除，幂等——结算清车传勾选的 product_ids，重复调用
+  // 或删除不存在的条目都不报错（RowsAffected 对 DELETE 没有业务含义）。
+  rpc RemoveItems(RemoveCartItemsRequest) returns (CartResponse);
+}
+
+message AddCartItemRequest {
+  uint64 product_id = 1;
+  int32 quantity = 2; // 增量：本次加购数量，1~99
+}
+
+message ListCartRequest {}
+
+message UpdateCartItemRequest {
+  uint64 product_id = 1;
+  int32 quantity = 2; // 绝对值：设置后的数量，1~99
+}
+
+message RemoveCartItemsRequest {
+  repeated uint64 product_ids = 1; // 批量删除（结算清车传勾选项），幂等
+}
+
+// CartItem 的展示信息（name/price/image/stock）是 JOIN products 的实时值，
+// 购物车表里不存快照——价格快照的正确位置是订单（OrderItem.unit_price_cents，
+// 下单时刻由 DeductStock 给出），车里存快照反而制造"显示 99 成交 199"
+// 之外的第二份要维护一致性的价格数据。
+message CartItem {
+  uint64 product_id = 1;
+  int32 quantity = 2;
+  string name = 3;
+  int64 price_cents = 4;
+  string image_url = 5;
+  int32 stock = 6;
+}
+
+message CartResponse {
+  repeated CartItem items = 1;
+  // total_quantity 是全部条目 quantity 之和——顶栏购物车角标的数字来源，
+  // 服务端算一次，免得各端自己遍历再各自漂移。
+  int32 total_quantity = 2;
+}

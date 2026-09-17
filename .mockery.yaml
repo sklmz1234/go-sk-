@@ -24,6 +24,12 @@ packages:
           filename: mock_repository.go
           dir: "{{.InterfaceDir}}/mocks"
           outpkg: mocks
+      CartRepository:
+        config:
+          mockname: MockCartRepository
+          filename: mock_cart_repository.go
+          dir: "{{.InterfaceDir}}/mocks"
+          outpkg: mocks
   go-ecom-admin/internal/order/repository:
     config:
       all: false

@@ -357,3 +357,253 @@ var ProductService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "proto/product/product.proto",
 }
+
+const (
+	CartService_AddItem_FullMethodName            = "/product.CartService/AddItem"
+	CartService_ListCart_FullMethodName           = "/product.CartService/ListCart"
+	CartService_UpdateItemQuantity_FullMethodName = "/product.CartService/UpdateItemQuantity"
+	CartService_RemoveItems_FullMethodName        = "/product.CartService/RemoveItems"
+)
+
+// CartServiceClient is the client API for CartService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// —— 阶段 5B：购物车 ——
+//
+// CartService 独立成 service 而不是塞进 ProductService：购物车虽然和商品
+// 同库（ListCart 要 JOIN products 拿实时信息），但它不是商品 CRUD 的延伸。
+// ProductService 背后的 Repository 接口被缓存/搜索两层装饰器包裹，把
+// 购物车方法加进去会让那份接口无谓膨胀——购物车不需要缓存（低频读写、
+// 数据强个人化没有共享收益）也不需要搜索。
+//
+// user_id 一律来自 gRPC metadata（pkg/identity），不进 message——与
+// ProductService 写路径同一约定：身份是横切关注点。
+type CartServiceClient interface {
+	// AddItem 增量加购：同商品重复加购数量累加（联合唯一键 + 原子 upsert），
+	// 不插新行。不校验库存——库存校验放在下单（409 兜底），避免"加购时有货、
+	// 结算时售罄"的双重校验语义打架。
+	AddItem(ctx context.Context, in *AddCartItemRequest, opts ...grpc.CallOption) (*CartResponse, error)
+	ListCart(ctx context.Context, in *ListCartRequest, opts ...grpc.CallOption) (*CartResponse, error)
+	// UpdateItemQuantity 绝对值语义：设置该商品数量为 quantity（不是增量）。
+	UpdateItemQuantity(ctx context.Context, in *UpdateCartItemRequest, opts ...grpc.CallOption) (*CartResponse, error)
+	// RemoveItems 批量删除，幂等——结算清车传勾选的 product_ids，重复调用
+	// 或删除不存在的条目都不报错（RowsAffected 对 DELETE 没有业务含义）。
+	RemoveItems(ctx context.Context, in *RemoveCartItemsRequest, opts ...grpc.CallOption) (*CartResponse, error)
+}
+
+type cartServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewCartServiceClient(cc grpc.ClientConnInterface) CartServiceClient {
+	return &cartServiceClient{cc}
+}
+
+func (c *cartServiceClient) AddItem(ctx context.Context, in *AddCartItemRequest, opts ...grpc.CallOption) (*CartResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CartResponse)
+	err := c.cc.Invoke(ctx, CartService_AddItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cartServiceClient) ListCart(ctx context.Context, in *ListCartRequest, opts ...grpc.CallOption) (*CartResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CartResponse)
+	err := c.cc.Invoke(ctx, CartService_ListCart_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cartServiceClient) UpdateItemQuantity(ctx context.Context, in *UpdateCartItemRequest, opts ...grpc.CallOption) (*CartResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CartResponse)
+	err := c.cc.Invoke(ctx, CartService_UpdateItemQuantity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cartServiceClient) RemoveItems(ctx context.Context, in *RemoveCartItemsRequest, opts ...grpc.CallOption) (*CartResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CartResponse)
+	err := c.cc.Invoke(ctx, CartService_RemoveItems_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CartServiceServer is the server API for CartService service.
+// All implementations must embed UnimplementedCartServiceServer
+// for forward compatibility.
+//
+// —— 阶段 5B：购物车 ——
+//
+// CartService 独立成 service 而不是塞进 ProductService：购物车虽然和商品
+// 同库（ListCart 要 JOIN products 拿实时信息），但它不是商品 CRUD 的延伸。
+// ProductService 背后的 Repository 接口被缓存/搜索两层装饰器包裹，把
+// 购物车方法加进去会让那份接口无谓膨胀——购物车不需要缓存（低频读写、
+// 数据强个人化没有共享收益）也不需要搜索。
+//
+// user_id 一律来自 gRPC metadata（pkg/identity），不进 message——与
+// ProductService 写路径同一约定：身份是横切关注点。
+type CartServiceServer interface {
+	// AddItem 增量加购：同商品重复加购数量累加（联合唯一键 + 原子 upsert），
+	// 不插新行。不校验库存——库存校验放在下单（409 兜底），避免"加购时有货、
+	// 结算时售罄"的双重校验语义打架。
+	AddItem(context.Context, *AddCartItemRequest) (*CartResponse, error)
+	ListCart(context.Context, *ListCartRequest) (*CartResponse, error)
+	// UpdateItemQuantity 绝对值语义：设置该商品数量为 quantity（不是增量）。
+	UpdateItemQuantity(context.Context, *UpdateCartItemRequest) (*CartResponse, error)
+	// RemoveItems 批量删除，幂等——结算清车传勾选的 product_ids，重复调用
+	// 或删除不存在的条目都不报错（RowsAffected 对 DELETE 没有业务含义）。
+	RemoveItems(context.Context, *RemoveCartItemsRequest) (*CartResponse, error)
+	mustEmbedUnimplementedCartServiceServer()
+}
+
+// UnimplementedCartServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedCartServiceServer struct{}
+
+func (UnimplementedCartServiceServer) AddItem(context.Context, *AddCartItemRequest) (*CartResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddItem not implemented")
+}
+func (UnimplementedCartServiceServer) ListCart(context.Context, *ListCartRequest) (*CartResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCart not implemented")
+}
+func (UnimplementedCartServiceServer) UpdateItemQuantity(context.Context, *UpdateCartItemRequest) (*CartResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateItemQuantity not implemented")
+}
+func (UnimplementedCartServiceServer) RemoveItems(context.Context, *RemoveCartItemsRequest) (*CartResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveItems not implemented")
+}
+func (UnimplementedCartServiceServer) mustEmbedUnimplementedCartServiceServer() {}
+func (UnimplementedCartServiceServer) testEmbeddedByValue()                     {}
+
+// UnsafeCartServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to CartServiceServer will
+// result in compilation errors.
+type UnsafeCartServiceServer interface {
+	mustEmbedUnimplementedCartServiceServer()
+}
+
+func RegisterCartServiceServer(s grpc.ServiceRegistrar, srv CartServiceServer) {
+	// If the following call panics, it indicates UnimplementedCartServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&CartService_ServiceDesc, srv)
+}
+
+func _CartService_AddItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddCartItemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CartServiceServer).AddItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CartService_AddItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CartServiceServer).AddItem(ctx, req.(*AddCartItemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CartService_ListCart_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCartRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CartServiceServer).ListCart(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CartService_ListCart_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CartServiceServer).ListCart(ctx, req.(*ListCartRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CartService_UpdateItemQuantity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateCartItemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CartServiceServer).UpdateItemQuantity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CartService_UpdateItemQuantity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CartServiceServer).UpdateItemQuantity(ctx, req.(*UpdateCartItemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CartService_RemoveItems_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveCartItemsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CartServiceServer).RemoveItems(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CartService_RemoveItems_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CartServiceServer).RemoveItems(ctx, req.(*RemoveCartItemsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// CartService_ServiceDesc is the grpc.ServiceDesc for CartService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var CartService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "product.CartService",
+	HandlerType: (*CartServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "AddItem",
+			Handler:    _CartService_AddItem_Handler,
+		},
+		{
+			MethodName: "ListCart",
+			Handler:    _CartService_ListCart_Handler,
+		},
+		{
+			MethodName: "UpdateItemQuantity",
+			Handler:    _CartService_UpdateItemQuantity_Handler,
+		},
+		{
+			MethodName: "RemoveItems",
+			Handler:    _CartService_RemoveItems_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "proto/product/product.proto",
+}

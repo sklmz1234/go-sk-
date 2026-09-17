@@ -246,6 +246,50 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderpb.CancelOrderReque
 	return &orderpb.CancelOrderResponse{Order: toProto(o)}, nil
 }
 
+// PayOrder（阶段 5B 模拟支付）：PENDING → PAID 的条件更新迁移。
+// 骨架与 CancelOrder 同源（归属 404 + 状态守卫 + 原子条件更新），但没有
+// outbox——模拟支付没有需要联动的外部效果（真实支付接入后，支付成功
+// 的下游动作如清购物车/记销量才需要本地消息表，那是 5C 的完整形态）。
+// 并发安全：repo 的 WHERE status='PENDING' 保证"支付与取消赛跑"时只有
+// 一个能赢，输家拿到 FailedPrecondition（409）。
+func (s *Service) PayOrder(ctx context.Context, req *orderpb.PayOrderRequest) (*orderpb.PayOrderResponse, error) {
+	callerID, err := identity.FromIncoming(ctx)
+	if err != nil {
+		return nil, apperrors.ToGRPCStatus(err)
+	}
+
+	o, err := s.repo.GetByID(ctx, req.GetId())
+	if err != nil {
+		return nil, apperrors.ToGRPCStatus(err)
+	}
+
+	// 越权 404：与 GetOrder/CancelOrder 同一语义，不暴露订单存在性。
+	if o.UserID != callerID {
+		s.log.Warn("order pay denied",
+			zap.Uint64("order_id", o.ID),
+			zap.Uint64("owner_id", o.UserID),
+			zap.Uint64("caller_id", callerID),
+		)
+		return nil, apperrors.ToGRPCStatus(apperrors.NotFound("order not found", nil))
+	}
+
+	if o.Status != model.StatusPending {
+		return nil, apperrors.ToGRPCStatus(apperrors.FailedPrecondition("only pending orders can be paid", nil))
+	}
+
+	if err := s.repo.UpdateStatus(ctx, o.ID, model.StatusPending, model.StatusPaid); err != nil {
+		return nil, apperrors.ToGRPCStatus(err)
+	}
+
+	o.Status = model.StatusPaid
+	s.log.Info("order paid (simulated)",
+		zap.Uint64("order_id", o.ID),
+		zap.Uint64("user_id", callerID),
+		zap.Int64("total_cents", o.TotalCents),
+	)
+	return &orderpb.PayOrderResponse{Order: toProto(o)}, nil
+}
+
 func toProto(o *model.Order) *orderpb.Order {
 	items := make([]*orderpb.OrderItem, 0, len(o.Items))
 	for _, it := range o.Items {
