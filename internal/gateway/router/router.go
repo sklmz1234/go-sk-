@@ -86,6 +86,24 @@ func New(h *handler.Handler, jwtSecret string, log *zap.Logger, metricsHandler h
 		orders.GET("", auth, h.ListMyOrders)
 		orders.GET("/:id", auth, h.GetOrder)
 		orders.POST("/:id/cancel", auth, h.CancelOrder)
+		// 模拟支付（阶段 5B）：PENDING → PAID 的状态迁移，同 cancel 的子资源
+		// 动作路径。真实支付接入后这个端点就是"支付回调"的落点。
+		orders.POST("/:id/pay", auth, h.PayOrder)
+
+		// 购物车（阶段 5B）同订单一样全部要求登录：购物车是私密资源，
+		// 且下游 CartService 每个方法都要从 metadata 验 user_id（零信任）。
+		// 四个路由覆盖：加购 / 列表 / 改数量 / 批量删（结算清车共用）。
+		cart := api.Group("/cart")
+		cart.POST("/items", auth, h.AddCartItem)
+		cart.GET("", auth, h.ListCart)
+		cart.PUT("/items/:productId", auth, h.UpdateCartItem)
+		cart.DELETE("/items", auth, h.RemoveCartItems)
+
+		// 收货信息（阶段 5B）：随机 mock 地址，结算/支付页展示用。
+		// 只有这一个读端点（mock 池没有 CRUD），独立成组而不是塞进
+		// /users——它不属于任何用户的资源。
+		addresses := api.Group("/addresses", auth)
+		addresses.GET("/random", h.GetRandomAddress)
 	}
 
 	return r

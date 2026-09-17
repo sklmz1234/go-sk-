@@ -123,8 +123,10 @@ func (r *gormRepository) List(ctx context.Context, page, pageSize int) ([]*model
 }
 
 // SearchByKeyword 是搜索的降级实现：ES 不可用时的 MySQL LIKE 兜底。
-// 只在 name 上匹配（description 的全文检索是 ES 的活）——降级策略求
-// "搜得到"不求"搜得全"，召回率损失可接受，全站不 500 才是目标。
+// name 和 description 都匹配——2026-09-16 分类搜索事故：分类埋词
+// （「分类：手机数码」）只存在于 description，兜底只搜 name 导致降级
+// 期间分类筛选必然 0 命中。兜底路径的字段覆盖必须和 ES multi_match
+// 的 fields 对齐，否则降级不是"搜得粗糙"而是"功能消失"。
 //
 // LIKE 通配符转义：用户输入里的 % 和 _ 是 LIKE 的元字符，不转义的话
 // 搜 "100%" 会变成全表匹配。
@@ -152,7 +154,10 @@ func (r *gormRepository) SearchByKeyword(ctx context.Context, keyword string, pa
 	var products []*model.Product
 	var total int64
 
-	db := r.db.WithContext(ctx).Model(&model.Product{}).Where(`name LIKE ? ESCAPE '!'`, like)
+	// name OR description 双字段匹配（对齐 ES multi_match 的 fields），
+	// 两个占位符共用同一个 like 模式。
+	db := r.db.WithContext(ctx).Model(&model.Product{}).
+		Where(`(name LIKE ? ESCAPE '!' OR description LIKE ? ESCAPE '!')`, like, like)
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, apperrors.Internal("failed to count products by keyword", err)
 	}

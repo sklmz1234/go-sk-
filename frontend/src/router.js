@@ -21,15 +21,12 @@ function showNotFound(container) {
   showError(container, '未找到所请求的页面。');
 }
 
-function writeRoute(path) {
-  return /^\/products\/new$|^\/products\/[^/]+\/edit$/.test(path);
-}
-
 export async function renderRoute() {
   const { path, query } = readRoute();
 
-  if (writeRoute(path) && !isAuthenticated()) {
-    // 保存原路径可使登录后的写操作返回到用户原本要访问的页面。
+  // 整站登录门槛：未登录访问任何页面（含默认的 /products）都先跳登录页，
+  // 只放行 /login 与 /register 本身。保存原路径可使登录后回到原本要访问的页面。
+  if (!isAuthenticated() && path !== '/login' && path !== '/register') {
     setReturnPath(window.location.hash || '#/products');
     window.location.hash = '#/login';
     return;

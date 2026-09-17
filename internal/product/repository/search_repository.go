@@ -60,6 +60,31 @@ const (
 	esCallTimeout = 2 * time.Second
 )
 
+// —— 启动期 ping 重试（2026-09-16 分类搜索事故驱动）——
+//
+// 事故原型：compose up 时 ES 加载 IK 插件要十几秒，Go 服务一秒就绪；
+// 启动 ping 只试一次，撞上 "connection refused" 就永久放弃——main 据此
+// 不装配搜索装饰器，服务整个生命周期都在 LIKE 降级，ES 随后起来了也
+// 不自知（装饰器是启动期装配的，运行期不会重新包）。
+//
+// 修法和 database.ConnectWithRetry（pkg/database/connect.go）同模式：
+// 基础设施未就绪 → 应用层带退避重试，秒级间隔远快于容器重启的分钟级
+// 退避。总预算 30s 覆盖带插件的 ES 冷启动；黑洞地址由 esDialTimeout
+// 保证每次尝试 1s 内失败，不会把预算拖成灾难。
+//
+// 三个参数是包级 var 而非 const：单测要把预算缩到毫秒级、把 sleep
+// 换成 no-op，避免真实等待拖慢 CI（connect.go 的 sleep 同手法）。
+var (
+	// esPingMaxWait 启动探活的总预算，耗尽才返回错误（main 才降级 LIKE）。
+	esPingMaxWait = 30 * time.Second
+	// esPingMinDelay 第一次重试前的等待（退避基数），随尝试指数翻倍。
+	esPingMinDelay = time.Second
+	// esPingMaxDelay 单次等待的上限（封顶 5s，避免后期退避太疏）。
+	esPingMaxDelay = 5 * time.Second
+	// esPingSleep 可替换的 sleep，测试里换成 no-op。
+	esPingSleep = func(d time.Duration) { time.Sleep(d) }
+)
+
 // newESTransport 带超时边界的 HTTP 传输层。go-elasticsearch 的默认
 // transport 沿用 http.DefaultTransport 的零超时拨号——对"对端已死但
 // 网络不报错"的黑洞场景毫无防御，这是必须自定义的原因。
@@ -128,8 +153,8 @@ const indexMapping = `{
 }`
 
 // NewESSearcher 连接 ES 并确保索引存在（不存在则按 IK mapping 创建）。
-// Ping 失败直接返回错误——调用方（main）据此决定不启用搜索装饰器，
-// 整个服务降级为 LIKE，理由见文件头注释。
+// 启动探活带退避重试（见上面的 var 块注释）——重试预算耗尽才返回错误，
+// 调用方（main）据此决定不启用搜索装饰器，整个服务降级为 LIKE。
 func NewESSearcher(addr, index string, log *zap.Logger) (*ESSearcher, error) {
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{addr},
@@ -140,24 +165,56 @@ func NewESSearcher(addr, index string, log *zap.Logger) (*ESSearcher, error) {
 	}
 	s := &ESSearcher{client: client, index: index, log: log}
 
-	// 启动期 Ping 同样要有超时：ES 地址配置错误（黑洞 IP）时，
-	// 没有这行的话服务启动会卡在 Ping 上直到被 K8s/人工杀掉——
-	// "ES 不可用就降级 LIKE"的自愈路径要求 Ping 必须快速给出结论。
-	pingCtx, cancel := s.withCallTimeout(context.Background())
-	res, err := client.Ping(client.Ping.WithContext(pingCtx))
-	cancel()
-	if err != nil {
-		return nil, fmt.Errorf("elasticsearch: ping: %w", err)
-	}
-	defer res.Body.Close()
-	if res.IsError() {
-		return nil, fmt.Errorf("elasticsearch: ping: status %s", res.Status())
+	if err := s.pingWithRetry(client); err != nil {
+		return nil, err
 	}
 
 	if err := s.ensureIndex(context.Background()); err != nil {
 		return nil, fmt.Errorf("elasticsearch: ensure index: %w", err)
 	}
 	return s, nil
+}
+
+// pingWithRetry 启动期探活：带退避反复 ping，成功或总预算耗尽才返回。
+// 与 database.ConnectWithRetry 同一个循环骨架：成功 → nil；预算耗尽 →
+// 包装最后一次错误的 error（main 拿到它降级 LIKE 并记 WARN）。
+func (s *ESSearcher) pingWithRetry(client *elasticsearch.Client) error {
+	deadline := time.Now().Add(esPingMaxWait)
+	delay := esPingMinDelay
+
+	for attempt := 1; ; attempt++ {
+		// 单次 ping 同样受 esCallTimeout 约束：黑洞地址 1s 内失败，
+		// 不会把重试预算变成"每次都挂满"。
+		pingCtx, cancel := s.withCallTimeout(context.Background())
+		res, err := client.Ping(client.Ping.WithContext(pingCtx))
+		cancel()
+		if err == nil {
+			if !res.IsError() {
+				res.Body.Close()
+				if attempt > 1 {
+					s.log.Info("elasticsearch reachable after retries", zap.Int("attempts", attempt))
+				}
+				return nil
+			}
+			err = fmt.Errorf("elasticsearch: ping: status %s", res.Status())
+			res.Body.Close()
+		}
+
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return fmt.Errorf("elasticsearch: unreachable after %d attempts over %s: %w",
+				attempt, esPingMaxWait, err)
+		}
+
+		wait := min(delay, remaining)
+		s.log.Warn("elasticsearch not ready, will retry",
+			zap.Int("attempt", attempt),
+			zap.Duration("retry_in", wait),
+			zap.Error(err))
+
+		esPingSleep(wait)
+		delay = min(delay*2, esPingMaxDelay)
+	}
 }
 
 // Recreate 删除并重建索引（带 IK mapping）。只给 seed / 未来的 reindex

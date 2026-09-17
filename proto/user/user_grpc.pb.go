@@ -22,9 +22,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UserService_Register_FullMethodName = "/user.UserService/Register"
-	UserService_Login_FullMethodName    = "/user.UserService/Login"
-	UserService_GetUser_FullMethodName  = "/user.UserService/GetUser"
+	UserService_Register_FullMethodName         = "/user.UserService/Register"
+	UserService_Login_FullMethodName            = "/user.UserService/Login"
+	UserService_GetUser_FullMethodName          = "/user.UserService/GetUser"
+	UserService_GetRandomAddress_FullMethodName = "/user.UserService/GetRandomAddress"
 )
 
 // UserServiceClient is the client API for UserService service.
@@ -42,6 +43,12 @@ type UserServiceClient interface {
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
 	Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error)
 	GetUser(ctx context.Context, in *GetUserRequest, opts ...grpc.CallOption) (*GetUserResponse, error)
+	// GetRandomAddress（阶段 5B）：随机返回一条收货信息。C 端结算/支付页
+	// 展示"收货人 / 电话 / 地址"用——学习项目没有真实地址簿，addresses 表
+	// 是 seed 灌的 mock 数据池，每次随机取一条，让下单流程有完整的视觉
+	// 闭环。以后升级成真实地址簿（按 user_id 归属 + CRUD）时换接口即可，
+	// 前端只改数据源。空池返回 NotFound。
+	GetRandomAddress(ctx context.Context, in *GetRandomAddressRequest, opts ...grpc.CallOption) (*GetRandomAddressResponse, error)
 }
 
 type userServiceClient struct {
@@ -82,6 +89,16 @@ func (c *userServiceClient) GetUser(ctx context.Context, in *GetUserRequest, opt
 	return out, nil
 }
 
+func (c *userServiceClient) GetRandomAddress(ctx context.Context, in *GetRandomAddressRequest, opts ...grpc.CallOption) (*GetRandomAddressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRandomAddressResponse)
+	err := c.cc.Invoke(ctx, UserService_GetRandomAddress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UserServiceServer is the server API for UserService service.
 // All implementations must embed UnimplementedUserServiceServer
 // for forward compatibility.
@@ -97,6 +114,12 @@ type UserServiceServer interface {
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
 	Login(context.Context, *LoginRequest) (*LoginResponse, error)
 	GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error)
+	// GetRandomAddress（阶段 5B）：随机返回一条收货信息。C 端结算/支付页
+	// 展示"收货人 / 电话 / 地址"用——学习项目没有真实地址簿，addresses 表
+	// 是 seed 灌的 mock 数据池，每次随机取一条，让下单流程有完整的视觉
+	// 闭环。以后升级成真实地址簿（按 user_id 归属 + CRUD）时换接口即可，
+	// 前端只改数据源。空池返回 NotFound。
+	GetRandomAddress(context.Context, *GetRandomAddressRequest) (*GetRandomAddressResponse, error)
 	mustEmbedUnimplementedUserServiceServer()
 }
 
@@ -115,6 +138,9 @@ func (UnimplementedUserServiceServer) Login(context.Context, *LoginRequest) (*Lo
 }
 func (UnimplementedUserServiceServer) GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetUser not implemented")
+}
+func (UnimplementedUserServiceServer) GetRandomAddress(context.Context, *GetRandomAddressRequest) (*GetRandomAddressResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRandomAddress not implemented")
 }
 func (UnimplementedUserServiceServer) mustEmbedUnimplementedUserServiceServer() {}
 func (UnimplementedUserServiceServer) testEmbeddedByValue()                     {}
@@ -191,6 +217,24 @@ func _UserService_GetUser_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserService_GetRandomAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRandomAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).GetRandomAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_GetRandomAddress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).GetRandomAddress(ctx, req.(*GetRandomAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // UserService_ServiceDesc is the grpc.ServiceDesc for UserService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -209,6 +253,10 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetUser",
 			Handler:    _UserService_GetUser_Handler,
+		},
+		{
+			MethodName: "GetRandomAddress",
+			Handler:    _UserService_GetRandomAddress_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

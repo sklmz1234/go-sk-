@@ -62,3 +62,56 @@ export function cancelOrder(id) {
     requiresAuth: true,
   });
 }
+
+// POST /api/v1/orders/:id/pay → 更新后的 OrderDTO（阶段 5B 模拟支付：PENDING → PAID）
+// 409 = 订单已不是 PENDING（已支付/已取消，或与取消并发赛跑输了）。
+export function payOrder(id) {
+  return request(`/api/v1/orders/${encodeURIComponent(id)}/pay`, {
+    method: 'POST',
+    requiresAuth: true,
+  });
+}
+
+// —— 购物车（阶段 5B，全部需要登录）——
+// 四个接口统一返回 {items:[{product_id,name,image_url,price_yuan,stock,quantity}], total_quantity}：
+// 任何变更后都带回最新全量购物车，前端拿一次响应就能同时刷新列表和角标。
+
+// POST /api/v1/cart/items body {product_id, quantity}（quantity 是增量：重复加购累加）
+export function addCartItem(productId, quantity) {
+  return request('/api/v1/cart/items', {
+    method: 'POST',
+    body: { product_id: productId, quantity },
+    requiresAuth: true,
+  });
+}
+
+// GET /api/v1/cart → 全量购物车
+export function listCart() {
+  return request('/api/v1/cart', { requiresAuth: true });
+}
+
+// PUT /api/v1/cart/items/:productId body {quantity}（绝对值：设置后的数量）
+export function updateCartItem(productId, quantity) {
+  return request(`/api/v1/cart/items/${encodeURIComponent(productId)}`, {
+    method: 'PUT',
+    body: { quantity },
+    requiresAuth: true,
+  });
+}
+
+// DELETE /api/v1/cart/items body {product_ids:[]}（批量删，幂等；结算清车与单行删除共用）
+export function removeCartItems(productIds) {
+  return request('/api/v1/cart/items', {
+    method: 'DELETE',
+    body: { product_ids: productIds },
+    requiresAuth: true,
+  });
+}
+
+// —— 收货信息（阶段 5B mock 池）——
+
+// GET /api/v1/addresses/random → {id, receiver_name, phone, address}
+// mock 数据池随机取一条，结算/支付页展示用（无真实地址簿）。
+export function getRandomAddress() {
+  return request('/api/v1/addresses/random', { requiresAuth: true });
+}

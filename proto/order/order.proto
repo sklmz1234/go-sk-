@@ -14,6 +14,11 @@ service OrderService {
   // CancelOrder 在阶段 3b 实现：PENDING → CANCELLED 单方向流转 + RestoreStock
   // 回补库存。契约先定在这里，避免 3b 再改 proto 重新生成。
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
+  // PayOrder（阶段 5B 模拟支付）：PENDING → PAID 单方向流转。没有真实支付
+  // 渠道，"支付成功"就是这一次状态迁移——条件更新（WHERE status='PENDING'）
+  // 保证并发支付/取消只有一个能命中。真实支付对接后，这里换成
+  // "支付回调驱动"的迁移入口即可，状态机本身不用动。
+  rpc PayOrder(PayOrderRequest) returns (PayOrderResponse);
 }
 
 // 订单状态机：MVP 里创建即 PENDING；Cancel 只允许 PENDING → CANCELLED 单方向流转。
@@ -80,5 +85,13 @@ message CancelOrderRequest {
 }
 
 message CancelOrderResponse {
+  Order order = 1;
+}
+
+message PayOrderRequest {
+  uint64 id = 1;
+}
+
+message PayOrderResponse {
   Order order = 1;
 }

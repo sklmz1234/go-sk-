@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { App, Button, Col, InputNumber, Modal, Row, Spin, Tag } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
-import { createOrder, getProduct } from '../api';
+import { addCartItem, createOrder, getProduct } from '../api';
 import { useSessionStore } from '../stores/session';
+import { useCartStore } from '../stores/cart';
 import { formatPrice } from '../utils/format';
 
 export default function ProductDetail() {
@@ -10,6 +11,7 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { message } = App.useApp();
   const token = useSessionStore((s) => s.token);
+  const syncCart = useCartStore((s) => s.syncFromResponse);
 
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -19,6 +21,7 @@ export default function ProductDetail() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalQty, setModalQty] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +44,26 @@ export default function ProductDetail() {
     }
     setModalQty(qty);
     setModalOpen(true);
+  }
+
+  // 加入购物车：和"立即购买"共用未登录跳转（redirect 回本页）。
+  // 成功后用响应里的 total_quantity 就地刷新顶栏角标——后端所有购物车
+  // 接口都带回最新全量，这是 5B 的接口契约红利。
+  async function addToCart() {
+    if (!token) {
+      navigate(`/login?redirect=${encodeURIComponent(`/products/${id}`)}`);
+      return;
+    }
+    setAdding(true);
+    try {
+      const resp = await addCartItem(product.id, qty);
+      syncCart(resp);
+      message.success(`已加入购物车（当前共 ${resp.total_quantity} 件）`);
+    } catch (e) {
+      message.error(e.message);
+    } finally {
+      setAdding(false);
+    }
   }
 
   async function submitOrder() {
@@ -119,6 +142,10 @@ export default function ProductDetail() {
           />
           <Button type="primary" size="large" disabled={soldOut} onClick={openBuyModal}>
             {soldOut ? '已售罄' : '立即购买'}
+          </Button>
+          {/* 加购不校验库存（下单 409 兜底），售罄也可先囤在车里等补货 */}
+          <Button size="large" loading={adding} onClick={addToCart}>
+            加入购物车
           </Button>
         </div>
       </Col>

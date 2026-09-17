@@ -17,6 +17,13 @@ service UserService {
   rpc Register(RegisterRequest) returns (RegisterResponse);
   rpc Login(LoginRequest) returns (LoginResponse);
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
+
+  // GetRandomAddress（阶段 5B）：随机返回一条收货信息。C 端结算/支付页
+  // 展示"收货人 / 电话 / 地址"用——学习项目没有真实地址簿，addresses 表
+  // 是 seed 灌的 mock 数据池，每次随机取一条，让下单流程有完整的视觉
+  // 闭环。以后升级成真实地址簿（按 user_id 归属 + CRUD）时换接口即可，
+  // 前端只改数据源。空池返回 NotFound。
+  rpc GetRandomAddress(GetRandomAddressRequest) returns (GetRandomAddressResponse);
 }
 
 message GetUserRequest {
@@ -58,4 +65,21 @@ message User {
   string username = 2;
   string email = 3;
   int64 created_at = 4; // unix 秒，proto3 没有原生时间类型，用整数最简单也最少歧义
+}
+
+// —— 阶段 5B：收货地址（mock 数据池） ——
+
+message GetRandomAddressRequest {}
+
+message GetRandomAddressResponse {
+  Address address = 1;
+}
+
+message Address {
+  uint64 id = 1;
+  string receiver_name = 2;
+  string phone = 3;
+  // 完整地址（省市区 + 详细地址拼好的单字符串）：展示层只需要"一条能读
+  // 的地址"，拆字段是未来真实地址簿（要支持省市区级联选择）才值得付的复杂度。
+  string address = 4;
 }

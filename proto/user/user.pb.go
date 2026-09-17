@@ -394,6 +394,156 @@ func (x *User) GetCreatedAt() int64 {
 	return 0
 }
 
+type GetRandomAddressRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRandomAddressRequest) Reset() {
+	*x = GetRandomAddressRequest{}
+	mi := &file_proto_user_user_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRandomAddressRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRandomAddressRequest) ProtoMessage() {}
+
+func (x *GetRandomAddressRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_user_user_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRandomAddressRequest.ProtoReflect.Descriptor instead.
+func (*GetRandomAddressRequest) Descriptor() ([]byte, []int) {
+	return file_proto_user_user_proto_rawDescGZIP(), []int{7}
+}
+
+type GetRandomAddressResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       *Address               `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRandomAddressResponse) Reset() {
+	*x = GetRandomAddressResponse{}
+	mi := &file_proto_user_user_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRandomAddressResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRandomAddressResponse) ProtoMessage() {}
+
+func (x *GetRandomAddressResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_user_user_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRandomAddressResponse.ProtoReflect.Descriptor instead.
+func (*GetRandomAddressResponse) Descriptor() ([]byte, []int) {
+	return file_proto_user_user_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetRandomAddressResponse) GetAddress() *Address {
+	if x != nil {
+		return x.Address
+	}
+	return nil
+}
+
+type Address struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Id           uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	ReceiverName string                 `protobuf:"bytes,2,opt,name=receiver_name,json=receiverName,proto3" json:"receiver_name,omitempty"`
+	Phone        string                 `protobuf:"bytes,3,opt,name=phone,proto3" json:"phone,omitempty"`
+	// 完整地址（省市区 + 详细地址拼好的单字符串）：展示层只需要"一条能读
+	// 的地址"，拆字段是未来真实地址簿（要支持省市区级联选择）才值得付的复杂度。
+	Address       string `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Address) Reset() {
+	*x = Address{}
+	mi := &file_proto_user_user_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Address) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Address) ProtoMessage() {}
+
+func (x *Address) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_user_user_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Address.ProtoReflect.Descriptor instead.
+func (*Address) Descriptor() ([]byte, []int) {
+	return file_proto_user_user_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Address) GetId() uint64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *Address) GetReceiverName() string {
+	if x != nil {
+		return x.ReceiverName
+	}
+	return ""
+}
+
+func (x *Address) GetPhone() string {
+	if x != nil {
+		return x.Phone
+	}
+	return ""
+}
+
+func (x *Address) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
 var File_proto_user_user_proto protoreflect.FileDescriptor
 
 const file_proto_user_user_proto_rawDesc = "" +
@@ -423,11 +573,20 @@ const file_proto_user_user_proto_rawDesc = "" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x14\n" +
 	"\x05email\x18\x03 \x01(\tR\x05email\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\x03R\tcreatedAt2\xb2\x01\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\"\x19\n" +
+	"\x17GetRandomAddressRequest\"C\n" +
+	"\x18GetRandomAddressResponse\x12'\n" +
+	"\aaddress\x18\x01 \x01(\v2\r.user.AddressR\aaddress\"n\n" +
+	"\aAddress\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\x12#\n" +
+	"\rreceiver_name\x18\x02 \x01(\tR\freceiverName\x12\x14\n" +
+	"\x05phone\x18\x03 \x01(\tR\x05phone\x12\x18\n" +
+	"\aaddress\x18\x04 \x01(\tR\aaddress2\x85\x02\n" +
 	"\vUserService\x129\n" +
 	"\bRegister\x12\x15.user.RegisterRequest\x1a\x16.user.RegisterResponse\x120\n" +
 	"\x05Login\x12\x12.user.LoginRequest\x1a\x13.user.LoginResponse\x126\n" +
-	"\aGetUser\x12\x14.user.GetUserRequest\x1a\x15.user.GetUserResponseB!Z\x1fgo-ecom-admin/proto/user;userpbb\x06proto3"
+	"\aGetUser\x12\x14.user.GetUserRequest\x1a\x15.user.GetUserResponse\x12Q\n" +
+	"\x10GetRandomAddress\x12\x1d.user.GetRandomAddressRequest\x1a\x1e.user.GetRandomAddressResponseB!Z\x1fgo-ecom-admin/proto/user;userpbb\x06proto3"
 
 var (
 	file_proto_user_user_proto_rawDescOnce sync.Once
@@ -441,31 +600,37 @@ func file_proto_user_user_proto_rawDescGZIP() []byte {
 	return file_proto_user_user_proto_rawDescData
 }
 
-var file_proto_user_user_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_user_user_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_proto_user_user_proto_goTypes = []any{
-	(*GetUserRequest)(nil),   // 0: user.GetUserRequest
-	(*GetUserResponse)(nil),  // 1: user.GetUserResponse
-	(*RegisterRequest)(nil),  // 2: user.RegisterRequest
-	(*RegisterResponse)(nil), // 3: user.RegisterResponse
-	(*LoginRequest)(nil),     // 4: user.LoginRequest
-	(*LoginResponse)(nil),    // 5: user.LoginResponse
-	(*User)(nil),             // 6: user.User
+	(*GetUserRequest)(nil),           // 0: user.GetUserRequest
+	(*GetUserResponse)(nil),          // 1: user.GetUserResponse
+	(*RegisterRequest)(nil),          // 2: user.RegisterRequest
+	(*RegisterResponse)(nil),         // 3: user.RegisterResponse
+	(*LoginRequest)(nil),             // 4: user.LoginRequest
+	(*LoginResponse)(nil),            // 5: user.LoginResponse
+	(*User)(nil),                     // 6: user.User
+	(*GetRandomAddressRequest)(nil),  // 7: user.GetRandomAddressRequest
+	(*GetRandomAddressResponse)(nil), // 8: user.GetRandomAddressResponse
+	(*Address)(nil),                  // 9: user.Address
 }
 var file_proto_user_user_proto_depIdxs = []int32{
 	6, // 0: user.GetUserResponse.user:type_name -> user.User
 	6, // 1: user.RegisterResponse.user:type_name -> user.User
 	6, // 2: user.LoginResponse.user:type_name -> user.User
-	2, // 3: user.UserService.Register:input_type -> user.RegisterRequest
-	4, // 4: user.UserService.Login:input_type -> user.LoginRequest
-	0, // 5: user.UserService.GetUser:input_type -> user.GetUserRequest
-	3, // 6: user.UserService.Register:output_type -> user.RegisterResponse
-	5, // 7: user.UserService.Login:output_type -> user.LoginResponse
-	1, // 8: user.UserService.GetUser:output_type -> user.GetUserResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	9, // 3: user.GetRandomAddressResponse.address:type_name -> user.Address
+	2, // 4: user.UserService.Register:input_type -> user.RegisterRequest
+	4, // 5: user.UserService.Login:input_type -> user.LoginRequest
+	0, // 6: user.UserService.GetUser:input_type -> user.GetUserRequest
+	7, // 7: user.UserService.GetRandomAddress:input_type -> user.GetRandomAddressRequest
+	3, // 8: user.UserService.Register:output_type -> user.RegisterResponse
+	5, // 9: user.UserService.Login:output_type -> user.LoginResponse
+	1, // 10: user.UserService.GetUser:output_type -> user.GetUserResponse
+	8, // 11: user.UserService.GetRandomAddress:output_type -> user.GetRandomAddressResponse
+	8, // [8:12] is the sub-list for method output_type
+	4, // [4:8] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_user_user_proto_init() }
@@ -479,7 +644,7 @@ func file_proto_user_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_user_user_proto_rawDesc), len(file_proto_user_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { App, Card, Col, Empty, Pagination, Row, Spin, Tag } from 'antd';
+import { App, Button, Card, Col, Empty, Pagination, Row, Spin, Tag } from 'antd';
+import { ShoppingCartOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { listProducts } from '../api';
+import { addCartItem, listProducts } from '../api';
+import { useSessionStore } from '../stores/session';
+import { useCartStore } from '../stores/cart';
 import { formatPrice } from '../utils/format';
 
 // 4 列 × 3 行（UI 决策 1）。和后端默认值 20 故意不同——C 端卡片大，
@@ -15,7 +18,7 @@ function ProductCover({ product }) {
     return (
       <div
         style={{
-          height: 180,
+          height: 145,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -31,7 +34,7 @@ function ProductCover({ product }) {
     <img
       src={product.image_url}
       alt={product.name}
-      style={{ height: 180, width: '100%', objectFit: 'cover', display: 'block' }}
+      style={{ height: 145, width: '100%', objectFit: 'cover', display: 'block' }}
       onError={() => setBroken(true)}
     />
   );
@@ -48,6 +51,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { message } = App.useApp();
+  const syncCart = useCartStore((s) => s.syncFromResponse);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +77,23 @@ export default function Home() {
     setSearchParams(params);
   }
 
+  // 首页快捷加购（+1 件）。stopPropagation 防止触发卡片的"进详情"点击。
+  // 游客 → 登录页带 redirect 回详情页（那里能看到完整信息再决定加多少）。
+  async function quickAddToCart(e, product) {
+    e.stopPropagation();
+    if (!useSessionStore.getState().token) {
+      navigate(`/login?redirect=${encodeURIComponent(`/products/${product.id}`)}`);
+      return;
+    }
+    try {
+      const resp = await addCartItem(product.id, 1);
+      syncCart(resp);
+      message.success(`已加入购物车：${product.name}`);
+    } catch (err) {
+      message.error(err.message);
+    }
+  }
+
   return (
     <Spin spinning={loading}>
       <div style={{ minHeight: 320 }}>
@@ -82,7 +103,7 @@ export default function Home() {
             description={keyword ? `没有找到与「${keyword}」相关的商品` : '暂无商品'}
           />
         ) : (
-          <Row gutter={[16, 16]}>
+          <Row gutter={[12, 12]}>
             {products.map((p) => (
               // xs 2 列 / sm 3 列 / md 起 4 列（UI 决策 1 的响应式落地）
               <Col xs={12} sm={8} md={6} key={p.id}>
@@ -104,8 +125,16 @@ export default function Home() {
                         <span style={{ color: '#cf1322', fontWeight: 500 }}>
                           {formatPrice(p.price_yuan)}
                         </span>
-                        {/* 列表只标有货/售罄，不给具体数字（UI 决策 4） */}
-                        {p.stock > 0 ? <Tag color="green">有货</Tag> : <Tag>售罄</Tag>}
+                        {/* 列表只标有货/售罄，不给具体数字（UI 决策 4）；
+                            快捷加购允许售罄商品先囤车（加购不校验库存，下单 409 兜底） */}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {p.stock > 0 ? <Tag color="green">有货</Tag> : <Tag>售罄</Tag>}
+                          <Button
+                            size="small"
+                            icon={<ShoppingCartOutlined />}
+                            onClick={(e) => quickAddToCart(e, p)}
+                          />
+                        </span>
                       </div>
                     }
                   />

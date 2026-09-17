@@ -16,11 +16,11 @@ export function render(container) {
         <form class="auth-form" data-login-form novalidate>
           <div class="field">
             <label for="username">用户名</label>
-            <input id="username" name="username" autocomplete="username" required autofocus />
+            <input id="username" name="username" autocomplete="off" required autofocus />
           </div>
           <div class="field">
             <label for="password">密码</label>
-            <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required />
+            <input id="password" name="password" type="password" autocomplete="new-password" minlength="6" required />
           </div>
           <p class="form-error" data-form-error role="alert" hidden></p>
           <button class="button button--primary button--block" type="submit">登录管理台</button>
