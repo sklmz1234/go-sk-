@@ -12,6 +12,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -304,4 +305,93 @@ func TestListByIDs(t *testing.T) {
 	empty, err := repo.ListByIDs(context.Background(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, empty)
+}
+
+// —— 2026-09-16 分类搜索事故的回归测试对 ——
+
+// setFastPingRetry 把 ping 重试的等待全部"加速"：预算缩到毫秒级、
+// sleep 换成 no-op，让重试循环在单测里瞬间跑完。t.Cleanup 在测试结束
+// 时恢复全局（defer 在 helper 里会在返回时就恢复，等于没改）。
+func setFastPingRetry(t *testing.T, maxWait time.Duration) {
+	t.Helper()
+	origWait, origMin, origMax, origSleep := esPingMaxWait, esPingMinDelay, esPingMaxDelay, esPingSleep
+	t.Cleanup(func() {
+		esPingMaxWait, esPingMinDelay, esPingMaxDelay, esPingSleep = origWait, origMin, origMax, origSleep
+	})
+	esPingMaxWait = maxWait
+	esPingSleep = func(time.Duration) {}
+}
+
+// TestPingWithRetry_SucceedsAfterTransientFailures 是启动竞态的核心用例：
+// ES 先 500 两下、随后恢复，NewESSearcher 必须重试等到恢复，而不是第一次
+// 失败就放弃（放弃 = main 不装装饰器，服务整个生命周期都在 LIKE 降级，
+// 这正是 2026-09-16 事故：ES 慢启动十几秒，服务 ping 一次就走了）。
+// 假 ES 是 httptest 服务：前两次请求 500，之后一律 200（ping GET / 和
+// ensureIndex 的 HEAD /products 都能通过）。
+func TestPingWithRetry_SucceedsAfterTransientFailures(t *testing.T) {
+	setFastPingRetry(t, 5*time.Second)
+
+	var count int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// go-elasticsearch v8 会校验 X-Elastic-Product 响应头，裸 200 会被
+		// 拒绝为 "not Elasticsearch"——假 ES 必须把这个头带上。
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		if atomic.AddInt32(&count, 1) <= 2 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s, err := NewESSearcher(srv.URL, "products", zaptest.NewLogger(t))
+
+	// CloseClientConnections 强制断开 keep-alive 连接：ES 客户端的连接池
+	// 会留着已完成请求的连接，不断开的话 srv.Close() 会干等到超时。
+	defer srv.CloseClientConnections()
+
+	require.NoError(t, err, "瞬时故障后恢复的 ES 应该等到，而不是放弃")
+	// 4 次请求 = 两次失败的 ping + 第三次成功的 ping + ensureIndex 的
+	// 存在性检查（HEAD /products 也吃一个 200）。
+	assert.Equal(t, int32(4), atomic.LoadInt32(&count))
+	_ = s
+}
+
+// TestPingWithRetry_GivesUpAfterBudget：ES 持续不可用（一直 500）时，
+// 重试必须在预算内放弃并返回错误——main 靠这个错误降级 LIKE，
+// 重试不能变成"永远等下去"的启动挂死。
+func TestPingWithRetry_GivesUpAfterBudget(t *testing.T) {
+	setFastPingRetry(t, 300*time.Millisecond)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.CloseClientConnections()
+	defer srv.Close()
+
+	_, err := NewESSearcher(srv.URL, "products", zaptest.NewLogger(t))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unreachable", "错误要能看出是预算耗尽放弃")
+}
+
+// TestSearchByKeyword_LIKEMatchesDescription 是兜底能力对齐的核心用例：
+// 分类埋词（「分类：手机数码」）只存在于 description，LIKE 兜底只搜 name
+// 的话，降级期间分类筛选必然 0 命中（2026-09-16 事故的第二个病灶）。
+func TestSearchByKeyword_LIKEMatchesDescription(t *testing.T) {
+	repo := NewGormRepository(newSQLiteDB(t))
+	descOnly := &model.Product{Name: "笔记本支架", PriceCents: 8900, Stock: 5,
+		Description: "铝合金支架，六档高度调节。分类：手机数码。"}
+	other := &model.Product{Name: "机械键盘", PriceCents: 39900, Stock: 3,
+		Description: "Gasket 结构三模连接。分类：家用电器。"}
+	require.NoError(t, repo.Create(context.Background(), descOnly))
+	require.NoError(t, repo.Create(context.Background(), other))
+
+	// "手机数码"不出现在任何 name 里——纯 description 命中。
+	products, total, err := repo.SearchByKeyword(context.Background(), "手机数码", 1, 20)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, products, 1)
+	assert.Equal(t, "笔记本支架", products[0].Name)
 }
