@@ -3,10 +3,7 @@ package model
 
 import "time"
 
-// 订单状态机：创建即 PENDING；Cancel 只允许 PENDING → CANCELLED 单方向流转
-// （阶段 3b 实现）；PAID 留给支付环节。用 string 存储而不是 int——
-// 数据库里直接可读（排查时不用对着 0/1/2 猜语义），与 proto 枚举的映射
-// 收拢在 service 层一处。
+// 订单状态机
 const (
 	StatusPending   = "PENDING"
 	StatusPaid      = "PAID"
@@ -14,9 +11,7 @@ const (
 )
 
 // Order 对应 MySQL 中的 orders 表。
-// UserID 加索引："列出我的订单"（ListMyOrders）是订单域的头号查询。
-// TotalCents 落库冗余——它等于 items 的 quantity × unit_price_cents 之和，
-// 但列表页展示订单金额不该每次都 join 聚合，这是用存储换查询的简单选择。
+
 type Order struct {
 	ID         uint64      `gorm:"primaryKey;autoIncrement"`
 	UserID     uint64      `gorm:"column:user_id;not null;index"`

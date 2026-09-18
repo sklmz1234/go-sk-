@@ -4,12 +4,6 @@
 COMPOSE := docker compose
 K8S_DIR := deploy/k8s
 
-# 镜像唯一 tag（阶段 4 修复）：默认取当前 commit 短哈希。
-# 为什么必须唯一：:latest + IfNotPresent 的组合下，重建镜像后 K8s 看到
-# "同名 tag 已存在"就直接用缓存的旧镜像，rollout 永远拿到幽灵旧版本；
-# digest 引用又会被 kind 的 containerd 当成外部仓库去 pull。唯一 tag 让
-# 每次部署的镜像名都不同，IfNotPresent 语义反而变成优势（一定不存在，
-# 一定用新构建的那份）。可用 make k8s-build TAG=my-feature 显式覆盖。
 TAG ?= $(shell git rev-parse --short HEAD)
 
 .PHONY: help up down restart logs ps build seed clean k8s-build k8s-apply k8s-delete k8s-seed k8s-status k8s-rollout proto
@@ -18,9 +12,7 @@ help: ## 显示本帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
 
 proto: ## 重新生成 pb（插件版本须与 pb.go 头注释一致：protoc v6.33.x / protoc-gen-go v1.36.x）
-	# paths=source_relative 让生成文件落回 proto/<svc>/ 原位置，而不是按 go_package
-	# 再嵌套一层 go-ecom-admin/ 目录。三个 proto 一次全生成，避免漏改某个后
-	# pb 与 .proto 漂移。
+
 	protoc --go_out=. --go_opt=paths=source_relative \
 	  --go-grpc_out=. --go-grpc_opt=paths=source_relative \
 	  proto/product/product.proto proto/user/user.proto proto/order/order.proto

@@ -1,13 +1,5 @@
 // user 服务的 service 层单元测试。
-//
-// 测试策略：通过 mockery 生成的 MockRepository 注入假的存储实现，只验证
-// 业务规则（参数校验、bcrypt、防用户枚举、JWT 签发、AppError -> gRPC
-// status 的翻译），不碰真实数据库——GORM 行为由 repository 层的 sqlite
-// 测试负责，两者合起来才是完整的测试网。
-//
-// 断言选型：require（失败立即终止）用于「拿到响应/错误」这类后续断言的
-// 前置条件；assert（失败继续）用于可以并列检查的字段。日志用
-// zaptest.NewLogger(t)：只在测试失败时输出，且计入 t.Log 方便排查。
+
 package service
 
 import (
@@ -43,8 +35,6 @@ func newTestService(t *testing.T) (*Service, *mocks.MockRepository) {
 	return New(repo, zaptest.NewLogger(t), testJWTSecret, 1), repo
 }
 
-// storedUser 构造一条「数据库里的用户」。bcrypt.MinCost 而非 DefaultCost：
-// 哈希成本从 ~100ms 降到 ~1ms，三个用例就能省几百毫秒——测试速度也是工程指标。
 func storedUser(t *testing.T) *model.User {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.MinCost)
@@ -52,9 +42,6 @@ func storedUser(t *testing.T) *model.User {
 	return &model.User{ID: 42, Username: testUsername, Email: testEmail, PasswordHash: string(hash)}
 }
 
-// TestRegister_Validation 覆盖参数校验分支。mock 没有录制任何期望——
-// 如果校验失败仍然触达了 repository，mockery 会让测试失败，
-// 这行注释本身就是断言：「非法输入不应该触达数据库」。
 func TestRegister_Validation(t *testing.T) {
 	tests := []struct {
 		name string
@@ -96,7 +83,6 @@ func TestRegister_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetUser())
 
-	// 密码必须是哈希后的：既不等于明文，又能被 bcrypt 校验通过。
 	assert.NotEqual(t, testPassword, captured.PasswordHash)
 	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(captured.PasswordHash), []byte(testPassword)))
 
@@ -105,10 +91,6 @@ func TestRegister_Success(t *testing.T) {
 	assert.Equal(t, testEmail, resp.GetUser().GetEmail())
 }
 
-// TestRegister_DuplicateUsername 固化「唯一键冲突 -> 409」的翻译链路：
-// repository 把冲突翻译成 AppError(AlreadyExists)，service 只负责透传
-// （ToGRPCStatus）。这里 mock 直接返回翻译后的错误，验证的是 service
-// 不破坏这个语义。
 func TestRegister_DuplicateUsername(t *testing.T) {
 	svc, repo := newTestService(t)
 	repo.EXPECT().Create(mock.Anything, mock.Anything).
@@ -137,10 +119,6 @@ func TestRegister_RepoInternalError(t *testing.T) {
 	assert.Equal(t, codes.Internal, status.Code(err))
 }
 
-// TestLogin_AntiEnumeration 是本文件最重要的一组用例：「用户不存在」和
-// 「密码错误」对外必须返回完全相同的 gRPC code 和 message。一旦有人把
-// 两种失败改出差异（比如分开提示"用户不存在"），这条测试立刻变红——
-// 防用户枚举的设计由此被测试固化，而不是停留在注释里。
 func TestLogin_AntiEnumeration(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -196,15 +174,11 @@ func TestLogin_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.GetToken())
 
-	// token 不是只看非空就完事：parse 回来验证 claims，确认签发时
-	// 用的是正确的 secret 和用户身份——这才闭环。
 	claims, err := appjwt.Parse(resp.GetToken(), testJWTSecret)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(42), claims.UserID)
 	assert.Equal(t, testUsername, claims.Username)
 
-	// 返回的 user 结构里没有 PasswordHash 字段——这是 proto 类型系统
-	// 保证的（model.User 有、proto.User 没有），这里顺手验证转换没抄错字段。
 	assert.Equal(t, testUsername, resp.GetUser().GetUsername())
 }
 

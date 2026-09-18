@@ -1,19 +1,7 @@
 # HPA（Horizontal Pod Autoscaler）：按 CPU 利用率自动扩缩 order-service 副本数。
 # 放 optional/ 是因为它不是主链路必需品——`kubectl apply -f deploy/k8s` 不会带上它，
 # 需要时单独 `kubectl apply -f deploy/k8s/optional/hpa.yaml`。
-#
-# 前置依赖：metrics-server。HPA 的 CPU 数据源是 metrics.k8s.io API，
-# 由 metrics-server 提供；kind 集群默认不带，需先安装：
-#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-#   （kind 的 kubelet 用自签证书，metrics-server 要加启动参数
-#    --kubelet-insecure-tls：kubectl patch deployment metrics-server -n kube-system \
-#      --type=json -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'）
-#
-# 工作机制：每 15s 从 metrics-server 读所有 Pod 的 CPU 实际用量，
-# 利用率 = 实际用量 / resources.requests.cpu（所以 23-order-service.yaml 的
-# requests 是 HPA 的分母，缺了它 HPA 显示 unknown 且不动作）。
-# 当前均值超过 targetAverageUtilization 就加副本，低于就减，
-# 副本数被夹在 minReplicas/maxReplicas 之间。
+
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

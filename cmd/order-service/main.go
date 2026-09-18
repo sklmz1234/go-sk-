@@ -15,10 +15,10 @@ import (
 	"syscall"
 	"time"
 
-	"go.uber.org/zap"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -61,11 +61,11 @@ func main() {
 	defer log.Sync()
 
 	// ctx 提前到数据库连接之前创建：启动期重试若撞上 SIGTERM，
-	// 重试循环要能立刻让位退出（理由见 cmd/user-service/main.go）。
+	// 重试循环要能立刻让位退出。
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// 链路追踪 + 指标（阶段 2D 的红利：新服务零成本继承三支柱）。
+	// 链路追踪 + 指标
 	var tracerProvider *sdktrace.TracerProvider
 	var meterProvider *sdkmetric.MeterProvider
 	var metricsHandler http.Handler
@@ -84,7 +84,7 @@ func main() {
 		}
 	}
 
-	// 带退避重试的连接（daemon 重启后 MySQL 未就绪的自愈，见 pkg/database/connect.go）。
+	// 带退避重试的连接
 	db, err := database.ConnectWithRetry(ctx, func() (*gorm.DB, error) {
 		return gorm.Open(mysql.Open(cfg.MySQL.DSN()), &gorm.Config{TranslateError: true})
 	}, database.ConnectConfig{Log: log})
@@ -95,7 +95,7 @@ func main() {
 	if err := db.Use(gormotel.NewPlugin(gormotel.WithoutQueryVariables())); err != nil {
 		log.Fatal("attach gorm otel plugin", zap.Error(err))
 	}
-	// 带锁迁移，理由见 cmd/user-service/main.go：多副本并发建表竞态。
+	// 带锁迁移，多副本并发建表竞态。
 	if err := database.Migrate(db, 30*time.Second, &model.Order{}, &model.OrderItem{}, &model.OutboxMessage{}); err != nil {
 		log.Fatal("auto migrate failed", zap.Error(err))
 	}
@@ -111,14 +111,11 @@ func main() {
 
 	svc := service.New(repo, outboxRepo, productClient, log)
 
-	// outbox relay（阶段 4）：内嵌投递 goroutine，随进程生命周期运行。
-	// ctx 取消（SIGTERM）时 Run 在当前一轮投递结束后返回；行锁事务
-	// 若在退出瞬间未提交，连接断开自动回滚，消息回到 PENDING——
-	// 至少一次语义保证重启后接着投。
+	// outbox relay
 	relay := outbox.NewRelay(outboxRepo, productClient, log, 0, 0)
 	go relay.Run(ctx)
 
-	// 服务端埋点：提取上游 trace 上下文 + 每轮 RPC 建服务端 span。
+	// 服务端埋点。
 	grpcServer := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 	orderpb.RegisterOrderServiceServer(grpcServer, svc)
 	reflection.Register(grpcServer)
@@ -157,7 +154,7 @@ func main() {
 				log.Error("metrics server shutdown", zap.Error(err))
 			}
 		}
-		// 停服后 flush 未导出的 span / 指标，理由见 api-gateway main.go。
+		// 停服后 flush 未导出的 span / 指标
 		if tracerProvider != nil {
 			flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

@@ -1,10 +1,7 @@
 // accesslog.go：带 trace_id 的访问日志——阶段 2D 的"三支柱串联"落点。
 //
 // 日志、指标、追踪是可观测的三大支柱，而 trace_id 是把它们粘起来的钥匙：
-// 访问日志里带上 trace_id，排障时就形成固定动线——
-// 看到日志里一个 5xx → 抄下 trace_id → 去 Jaeger 搜出这条请求的完整瀑布图
-// （HTTP → gRPC → SQL，哪一跳慢/错一目了然）。没有这个 ID，日志和 trace
-// 就是两座孤岛，只能靠时间戳+路径人肉对齐。
+
 package middleware
 
 import (

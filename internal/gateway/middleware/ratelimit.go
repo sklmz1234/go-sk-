@@ -1,13 +1,5 @@
 // ratelimit.go 实现按客户端 IP 的令牌桶限流中间件。
-//
-// 令牌桶模型回顾（详见 golang.org/x/time/rate 文档）：
-//   - 桶容量 = burst，决定能吸收多大的瞬时突发；
-//   - 令牌以 r 个/秒匀速补充，决定长期平均速率；
-//   - 每个请求取一个令牌，取到放行，取不到立即拒绝（429）。
-//
-// 为什么挂在 JWT 之前：限流的意义是在"最贵的操作发生之前"挡掉过量请求，
-// 验签（JWT 解析 + HMAC）本身也有成本，而且 /auth/login 这种未登录接口
-// 恰恰最需要按 IP 限流（防暴力破解），所以它是全局第一道闸门。
+
 package middleware
 
 import (
@@ -60,7 +52,7 @@ func newIPRateLimiter(r rate.Limit, burst int) *ipRateLimiter {
 // allow 取出该 IP 的桶并尝试消费一个令牌。
 // 锁的粒度是关键设计点：mutex 只保护 map 的查/建（纳秒级），
 // Allow() 在锁外调用（rate.Limiter 内部已并发安全）——否则所有 IP 的
-// 请求会在锁上串行化，限流器自己变成瓶颈。
+// 请求会在锁上串行化
 func (l *ipRateLimiter) allow(ip string) bool {
 	l.mu.Lock()
 	v, ok := l.visitors[ip]

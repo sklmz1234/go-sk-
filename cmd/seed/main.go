@@ -1,18 +1,5 @@
 // Command seed 给本地开发环境灌测试数据：10 个用户 + 44 个商品（5 大分类）。
-//
-// 设计决策：
-//   - 复用 internal/user/model 和 internal/product/model 里已有的 GORM 模型，
-//     不新建一套"仅供 seed 用"的表结构——测试数据必须长在真实的表上，否则
-//     跑起来的服务和种子数据对不上，这个脚本就失去了意义。
-//   - 每次运行先 TRUNATE 再插入：种子脚本的核心诉求是"给我一个确定的初始状态"，
-//     而不是"追加一批数据"。反复运行不应该报主键/唯一索引冲突，也不应该让
-//     数据量越滚越大。
-//   - 密码哈希方式（bcrypt.DefaultCost）和 internal/user/service.Register 保持
-//     一致：种子用户必须能用同样的登录接口验证密码，如果这里随便换一种哈希
-//     方式，种子生成的用户就登录不了，起不到"能跑通完整流程"的测试数据作用。
-//   - 收尾同步衍生存储：清 Redis 读缓存（FlushDB）+ 重建 ES 搜索索引
-//     （Recreate 后全量写入）。"确定的初始状态"必须包含所有衍生数据，
-//     否则旧缓存/旧索引里的 id 和 TRUNCATE 后的新库对不上。
+
 package main
 
 import (
@@ -37,10 +24,6 @@ import (
 	usermodel "go-ecom-admin/internal/user/model"
 )
 
-// seedAddresses（阶段 5B）是收货信息的 mock 数据池：GetRandomAddress 随机
-// 取一条给结算/支付页展示。姓名/电话/城市都是编的，电话用 138/139 等真实
-// 网号段 + 明显不会真打通的尾号——假数据也要"一眼假"，避免被当成真实
-// 联系方式传播。
 var seedAddresses = []usermodel.Address{
 	{ReceiverName: "张伟", Phone: "13800138001", Address: "北京市朝阳区望京街道望京 SOHO T1 座 1802"},
 	{ReceiverName: "李娜", Phone: "13900139002", Address: "上海市浦东新区张江路 605 号 3 号楼 501"},
@@ -52,25 +35,10 @@ var seedAddresses = []usermodel.Address{
 	{ReceiverName: "孙悦", Phone: "13600136008", Address: "南京市雨花台区软件大道 109 号软件谷科创城"},
 }
 
-// seedPassword 是所有种子用户统一使用的明文密码，仅用于本地开发/联调登录，
-// 不用于任何真实环境——这一点足够重要，专门写一行注释而不是让人猜。
+// seedPassword 是所有种子用户统一使用的明文密码，仅用于本地开发/联调登录
+
 const seedPassword = "123456"
 
-// seedProduct 把商品名和图文信息绑在一条记录里（阶段 5A：C 端首页直接展示
-// description/image_url）。三者一体定义，扩商品时不会漏配图或漏描述。
-// 图片用 picsum 外链占位（按英文 seed 名出固定图），本地不用准备静态资源；
-// description 里刻意埋了搜索关键词（如"耳机""充电"），方便联调 ES 召回。
-//
-// category + priceMin/priceMax（阶段 5C 分类导航）：
-//   - products 表没有 category 列（加列是后端契约变更，已拍板暂不做），
-//     分类靠"描述埋词"实现——插入时把「分类：xxx」追加进 description，
-//     ES 的 multi_match(name^2, description) 会命中它，前端点分类
-//     = 搜分类名，零后端契约改动；
-//   - 副作用（有意为之）：详情页能看到分类标注；
-//   - 已知限制：ES 故障降级 LIKE 只搜 name，分类页会空——降级路径
-//     本来就"求搜得到不求搜得全"，可接受；
-//   - 描述写作纪律：不要出现其他分类的词（如数码类写"运动"会被
-//     "运动户外"误召回），IK 分词是词级匹配，埋词靠词典整词命中。
 type seedProduct struct {
 	name        string
 	description string
@@ -149,9 +117,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 带退避重试的连接（理由同业务服务）：seed 是手动跑的工具，经常在
-	// MySQL 还在启动/重启的窗口期被执行，秒退只会逼人手动重跑。
-	// TranslateError: 驱动方言错误(如 MySQL 1062)→gorm.ErrDuplicatedKey 等统一错误
+	// 带退避重试的连接
 	db, err := database.ConnectWithRetry(context.Background(), func() (*gorm.DB, error) {
 		return gorm.Open(mysql.Open(cfg.MySQL.DSN()), &gorm.Config{TranslateError: true})
 	}, database.ConnectConfig{})
@@ -167,9 +133,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TRUNCATE 而不是 DELETE FROM：顺带把 AUTO_INCREMENT 计数器归零，
-	// 保证每次跑完种子脚本后 ID 都是从 1 开始的确定值，方便联调时直接用
-	// 固定 ID（比如 GET /api/v1/products/1）而不用现查一遍列表。
 	if err := db.Exec("TRUNCATE TABLE users").Error; err != nil {
 		fmt.Fprintf(os.Stderr, "truncate users: %v\n", err)
 		os.Exit(1)
@@ -183,20 +146,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "truncate addresses: %v\n", err)
 		os.Exit(1)
 	}
-	// cart_items（阶段 5B）：users 被 TRUNCATE 后旧购物车行全变孤儿
-	// （user_id 指向重置后的新自增序列，可能"恰好"JOIN 上另一个用户），
-	// 必须一起清。orders/order_items 故意不清——seed 重跑保留历史订单
-	// 是既有行为，改它属于另一个决策，不夹带。
+	// cart_items
 	if err := db.Exec("TRUNCATE TABLE cart_items").Error; err != nil {
 		fmt.Fprintf(os.Stderr, "truncate cart_items: %v\n", err)
 		os.Exit(1)
 	}
 
-	// TRUNCATE 只清了 MySQL，Redis 里还可能缓存着旧商品 JSON（2C 的读缓存，
-	// TTL 30 分钟）。不清掉的话，product-service 会从缓存读出没有 owner_id 的
-	// 旧数据，归属校验把所有写请求误判成 403——"确定的初始状态"必须包含缓存。
-	// 用 FlushDB 而不是按前缀删：seed 是开发工具，这个 Redis 实例专属于本项目；
-	// 如果将来共享实例，这里要换成 SCAN product:* 逐批删。
 	rdb, err := cache.New(cache.Config{Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	if err != nil {
 		// 清缓存是卫生措施不是核心职责，Redis 连不上只警告不中断
@@ -209,9 +164,6 @@ func main() {
 		_ = rdb.Close()
 	}
 
-	// 10 个种子用户密码都一样，哈希只需要算一次——bcrypt 本身带随机 salt，
-	// 复用同一份哈希结果不会让这些用户的密码"看起来一样"，反而省掉 9 次
-	// 重复的哈希计算（bcrypt 默认 cost 下单次哈希有意做得比较慢）。
 	hash, err := bcrypt.GenerateFromPassword([]byte(seedPassword), bcrypt.DefaultCost)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hash password: %v\n", err)
@@ -235,15 +187,13 @@ func main() {
 	for i, sp := range seedProducts {
 		products = append(products, &productmodel.Product{
 			Name: sp.name,
-			// 分类靠描述埋词（见 seedProduct 的注释）：ES 搜"手机数码"
+			// 分类靠描述埋词，ES 搜"手机数码"
 			// 命中这一段，前端点分类 = 搜分类名，不改后端契约。
 			Description: sp.description + "分类：" + sp.category + "。",
-			// 价格从该分类的区间随机（美妆 3.9~39.9 元、家电 99~499 元
-			// 各有各的真实价位），比全局统一 19.9~99.9 更接近真实数据分布。
+
 			PriceCents: sp.priceMin + rand.Int63n(sp.priceMax-sp.priceMin+1),
 			Stock:      int32(rand.Intn(501)),
-			// 商品轮流归属到 10 个种子用户，联调时任意登录一个账号
-			// 都能改/删到"自己的"商品，也能撞到别人的商品验证 403。
+
 			OwnerID:  users[i%len(users)].ID,
 			ImageURL: sp.imageURL,
 		})
@@ -253,8 +203,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 收货信息池（阶段 5B）：GORM 的批量 Create 复用切片元素时不会复制，
-	// 直接对 seedAddresses 取地址插入（它下面还要用于打印，不污染原切片）。
+	// 收货信息池
 	addresses := make([]*usermodel.Address, 0, len(seedAddresses))
 	for i := range seedAddresses {
 		addresses = append(addresses, &seedAddresses[i])
@@ -264,11 +213,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 全量重建 ES 索引（阶段 5A）：MySQL 刚被 TRUNCATE、自增 id 归零重用，
-	// 旧索引里的文档必然对不上，必须先删索引重建再全量写入——seed 的语义是
-	// "确定的初始状态"，ES 索引也是状态的一部分（和上面 FlushDB 清缓存同理）。
-	// ES 连不上只警告不中断（同 Redis 的取舍）：查询侧会降级 LIKE，主流程
-	// 不受影响，但输出里会明确打出"搜索索引未重建"。
+	// 全量重建 ES 索引
 	esSearcher, err := productrepo.NewESSearcher(cfg.Elasticsearch.Addr, cfg.Elasticsearch.Index, zap.NewExample())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warn: connect elasticsearch, search index not rebuilt: %v\n", err)

@@ -1,12 +1,5 @@
 // cart_repository 单元测试：sqlite :memory: 跑真实 GORM 逻辑。
-//
-// 本文件的重点考点（都是方言敏感/投影敏感的高风险代码）：
-//   - AddItem 的 clause.OnConflict 原子累加——INSERT 撞联合唯一键后
-//     quantity 必须是"旧值 + n"而不是覆盖（这正是选 upsert 而不是
-//     先查后改的全部意义）；
-//   - ListByUser 的 JOIN 投影能否把 products 的列正确填进 CartEntry
-//     的外层字段（嵌套结构 + 外层投影字段的 GORM 行为）；
-//   - 孤儿条目（商品已删）走 LEFT JOIN 不丢行。
+
 package repository
 
 import (

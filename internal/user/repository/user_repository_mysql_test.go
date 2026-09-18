@@ -1,17 +1,7 @@
 //go:build integration
 
 // 方言敏感用例：唯一键冲突翻译。
-//
-// 为什么单独放这个文件（而不是上面的 sqlite 套件）：
-// gorm.ErrDuplicatedKey 依赖「驱动把方言错误翻译成 GORM 统一错误」——
-// MySQL 是 1062 错误码，sqlite 是另一种报错文本，PostgreSQL 又不一样。
-// repository.Create 里 errors.Is(err, gorm.ErrDuplicatedKey) 的行为
-// 只有在目标方言（生产用的 MySQL）上验证才有意义。
-//
-// 运行方式（默认 go test 不编译本文件）：
-//
-//	TEST_MYSQL_DSN="root:root@tcp(127.0.0.1:3306)/ecom_test?parseTime=true" \
-//	  go test -tags=integration ./internal/user/repository/ -run TestCreate_Duplicate -v
+
 package repository
 
 import (

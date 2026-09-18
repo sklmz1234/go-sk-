@@ -1,8 +1,4 @@
-# Prometheus 抓取配置（阶段 2D 下半程）：pull 模式的"拉"端。
-# 四个 target 对应四个 /metrics 端点：
-#   网关复用业务端口 8080，三个 gRPC 服务走独立运维端口 9464。
-# order-service（阶段 3）只是第四个 target——Grafana 面板按 job 维度画图，
-# 新服务的曲线自动出现，一行 PromQL 都不用改。
+# Prometheus 抓取配置
 global:
   # 5s 是本地开发取向：事故重演（停 MySQL）时错误率曲线要"立即"飙升，
   # 生产常见 15s~30s——间隔越短，时间序列存储压力越大。

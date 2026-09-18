@@ -1,12 +1,5 @@
-# Redis：product-service 读缓存（阶段 2C）。
-#
-# 选型决策（和 mysql 对照着看）：
-#  - 用 StatefulSet + PVC 而不是 Deployment，因为开了 AOF 持久化
-#    （appendonly yes），重启后缓存数据还在，避免冷启动雪崩回源。
-#    缓存严格来说可以丢（丢了回源重建），StatefulSet 在这里是优化不是必需——
-#    面试时可以说"用 Deployment + emptyDir 也成立，代价是重启后全部回源"。
-#  - 同样只设 readiness 不设 liveness，理由见 10-mysql.yaml。
-#  - 无密码：集群外不可达（无 NodePort/Ingress），和 compose 里不暴露端口同理。
+# Redis：product-service
+
 apiVersion: v1
 kind: Service
 metadata:

@@ -1,14 +1,5 @@
 # MySQL：StatefulSet + PVC。
-#
-# 为什么不用 Deployment？数据库有状态（数据卷绑定、稳定的网络标识），
-# StatefulSet 保证 Pod 重建后挂回同一块 PVC，数据还在——对应 compose 里的
-# volumes: mysql-data。生产环境通常直接用云 RDS，在 K8s 里跑数据库
-# 属于学习/自建场景，这一点面试时要能主动说清取舍。
-#
-# 为什么只有 readinessProbe 没有 livenessProbe？数据库初始化慢
-# （建库建账号建表），liveness 失误会引发"重启风暴"：还没起来就被杀，
-# 越杀越起不来。对有状态服务，readiness（暂时不接流量）比 liveness
-# （杀掉重来）是更安全的失败处理。
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -64,24 +55,20 @@ spec:
           ports:
             - name: mysql
               containerPort: 3306
-          # 和 compose 的 healthcheck 同款：用 root 真正执行一次 SQL，
-          # 而不是 mysqladmin ping——保证 ready = 初始化全部完成，
-          # user/product 的 AutoMigrate 才不会踩空。
+
           readinessProbe:
             exec:
               command: ["sh", "-c", "mysql -h127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD -e 'SELECT 1' --silent"]
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 30 # 首次初始化可能较慢，给足重试次数
+            failureThreshold: 30 # 首次初始化可能较慢
           volumeMounts:
             - name: data
               mountPath: /var/lib/mysql
           resources:
             requests: { cpu: 250m, memory: 512Mi }
             limits: { memory: 1Gi }
-  # volumeClaimTemplates：PVC 由 StatefulSet 自动创建管理。
-  # kubectl delete -f 时 PVC 不会随之删除——数据在集群重装 manifests 后仍在，
-  # 但重置整个集群（改版本/节点数）会连 PVC 一起清空，测试数据用 seed 重建。
+
   volumeClaimTemplates:
     - metadata:
         name: data

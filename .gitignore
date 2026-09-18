@@ -23,3 +23,6 @@ Thumbs.db
 
 # AI assistant workspace data
 .workbuddy/
+# Frontend dev artifacts（不带斜杠的模式匹配任意目录层级，frontend/shop 都挡）
+.vite-dev.log
+shop/.vite/

@@ -1,8 +1,6 @@
 # Grafana 数据源 provisioning：容器起来就自动配好，免手动点 UI。
 # 两个数据源对应三支柱里的两根：Prometheus（指标）+ Jaeger（追踪）。
-# exemplarTraceIdDestinations 是关键联动：指标数据点上附着的 exemplar
-# （trace_id）在 Grafana 里渲染成可点击的小点，一点就跳到 Jaeger 里
-# 那条请求的完整瀑布图——"看到延迟尖峰 → 直达慢请求现场"。
+
 apiVersion: 1
 
 datasources:

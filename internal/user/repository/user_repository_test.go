@@ -1,12 +1,5 @@
 // user 服务 repository 层单元测试：用 sqlite :memory: 跑真实 GORM 逻辑。
-//
-// 为什么这里不用 mock？因为要验证的恰恰是「我对 GORM 行为的假设」——
-// First 查不到返回 gorm.ErrRecordNotFound（而不是 nil）、错误翻译成
-// 业务 AppError 是否正确。mock 一个 GORM 只是在测试我自己写的假设。
-//
-// 方言边界：sqlite 只负责方言无关的 GORM 行为；唯一键冲突翻译
-// （依赖 MySQL 驱动把 1062 翻译成 gorm.ErrDuplicatedKey）是方言敏感的，
-// 放在 user_repository_mysql_test.go（build tag: integration）里。
+
 package repository
 
 import (
@@ -24,8 +17,6 @@ import (
 	"go-ecom-admin/internal/user/model"
 )
 
-// newSQLiteDB 每个测试拿到一个独立的内存库：测试之间零共享状态，
-// 也不需要清理逻辑（库随测试结束消失）。
 func newSQLiteDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
@@ -34,8 +25,6 @@ func newSQLiteDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// requireAppCode 断言错误是一条指定 Code 的 AppError——repository 的
-// 契约是「永远返回翻译后的业务错误，不把 GORM/驱动错误漏出去」。
 func requireAppCode(t *testing.T, err error, want apperrors.Code) {
 	t.Helper()
 	require.Error(t, err)
@@ -50,7 +39,6 @@ func TestCreate_Success(t *testing.T) {
 	u := &model.User{Username: "sklmz", Email: "sklmz@example.com", PasswordHash: "hash"}
 	require.NoError(t, repo.Create(context.Background(), u))
 
-	// 自增主键由 GORM 在 Create 后回填——不回填说明主键约定被破坏。
 	assert.NotZero(t, u.ID)
 }
 

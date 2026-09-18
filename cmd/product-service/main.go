@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"go.uber.org/zap"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -58,12 +58,10 @@ func main() {
 	}
 	defer log.Sync()
 
-	// ctx 提前到数据库连接之前创建：启动期重试若撞上 SIGTERM，
-	// 重试循环要能立刻让位退出（理由见 cmd/user-service/main.go）。
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// 链路追踪（阶段 2D）：理由见 cmd/user-service/main.go。
+	// 链路追踪
 	var tracerProvider *sdktrace.TracerProvider
 	var meterProvider *sdkmetric.MeterProvider
 	var metricsHandler http.Handler
@@ -76,42 +74,31 @@ func main() {
 		if err != nil {
 			log.Fatal("init telemetry", zap.Error(err))
 		}
-		// 指标支柱（2D 下半程），理由见 cmd/user-service/main.go：
-		// MeterProvider 设置后 otelgrpc 指标自动出现。
+		// 指标支柱
 		meterProvider, metricsHandler, err = telemetry.SetupMetrics()
 		if err != nil {
 			log.Fatal("init metrics", zap.Error(err))
 		}
 	}
 
-	// 和 user-service 一样：现在依赖真实数据（库存/价格都要能改），
-	// 连不上数据库最终会 Fatal。但"基础设施暂时未就绪"（daemon 重启后
-	// MySQL 还在初始化）和"配置错误"要区分开：前者带退避重试 2 分钟
-	// 秒级自愈，超时才 Fatal 交给 restart 策略兜底，机制详见
-	// pkg/database/connect.go 的注释。
-	// TranslateError: 驱动方言错误(如 MySQL 1062)→gorm.ErrDuplicatedKey 等统一错误
 	db, err := database.ConnectWithRetry(ctx, func() (*gorm.DB, error) {
 		return gorm.Open(mysql.Open(cfg.MySQL.DSN()), &gorm.Config{TranslateError: true})
 	}, database.ConnectConfig{Log: log})
 	if err != nil {
 		log.Fatal("failed to connect to MySQL", zap.Error(err))
 	}
-	// SQL span 埋点，理由见 cmd/user-service/main.go。
-	// 指标（2D 下半程）不再禁用，随全局 MeterProvider 自动上报。
+	// SQL span 埋点
 	if err := db.Use(gormotel.NewPlugin(gormotel.WithoutQueryVariables())); err != nil {
 		log.Fatal("attach gorm otel plugin", zap.Error(err))
 	}
-	// 带锁迁移，理由见 cmd/user-service/main.go：多副本并发建表竞态。
-	// CartItem（阶段 5B）与 Product 同库：ListCart 的 JOIN 在单库内完成。
+	// 带锁迁移多副本并发建表竞态。
+
 	if err := database.Migrate(db, 30*time.Second, &model.Product{}, &model.StockRestore{}, &model.CartItem{}); err != nil {
 		log.Fatal("auto migrate failed", zap.Error(err))
 	}
 	repo := repository.NewGormRepository(db)
 
-	// 搜索装饰器（阶段 5A）：ES 可用就把 gorm 实现包进"ES 召回 + 回表"
-	// 装饰器，SearchByKeyword 走搜索引擎；ES 连不上时不包这层，
-	// SearchByKeyword 落到 gorm 的 LIKE 兜底实现——搜索引擎是加速层
-	// 不是正确性依赖，和下面缓存装饰器的降级原则完全一致。
+	// 搜索装饰器
 	esSearcher, err := repository.NewESSearcher(cfg.Elasticsearch.Addr, cfg.Elasticsearch.Index, log)
 	if err != nil {
 		log.Warn("elasticsearch unavailable, product search falls back to MySQL LIKE", zap.Error(err))
@@ -120,10 +107,8 @@ func main() {
 		log.Info("elasticsearch search enabled", zap.String("addr", cfg.Elasticsearch.Addr), zap.String("index", cfg.Elasticsearch.Index))
 	}
 
-	// 缓存装饰器（阶段 2C）：Redis 可用就把 gorm 实现包进 cache-aside 装饰器，
-	// service 层拿到的仍是同一个 Repository 接口，零改动。
-	// Redis 连不上时降级为直连 MySQL——缓存是加速层不是正确性依赖，
-	// 缓存挂了服务应该变慢而不是变挂（和装饰器里"Redis 故障降级回源"同一原则）。
+	// 缓存装饰器Redis 可用就把 gorm 实现包进 cache-aside 装饰器
+
 	rdb, err := cache.New(cache.Config{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
@@ -139,10 +124,6 @@ func main() {
 
 	svc := service.New(repo, log)
 
-	// CartService（阶段 5B）与 ProductService 同进程注册：共享同一个商品
-	// Repository（存在性检查命中缓存），但购物车有独立的 Repository（无
-	// 缓存/搜索装饰器，见 cart_repository.go 的包注释）。一个进程暴露两个
-	// gRPC service 是完全常规的形态——服务边界按业务划分，不按进程数。
 	cartSvc := service.NewCartService(repo, repository.NewGormCartRepository(db), log)
 
 	// 服务端埋点：提取上游 trace 上下文 + 每轮 RPC 建服务端 span。

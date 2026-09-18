@@ -1,12 +1,6 @@
 // httpmetrics.go：网关 HTTP 指标中间件——每个请求记录"耗时直方图 + 计数"，
 // 是 QPS / P99 延迟 / 错误率三张面板的数据源头。
-//
-// 关键设计：标签里的路由必须用 c.FullPath()（路由模式，如
-// /api/v1/products/:id）而不是 c.Request.URL.Path（实际路径，如
-// /api/v1/products/42）。后者会让每个不同的 id 都生成一条新的时间序列——
-// 指标系统的存储成本和时间序列条数成正比，id 是高基数维度，
-// 用实际路径做标签就是教科书级的"标签基数爆炸"（cardinality explosion），
-// 商品一多 Prometheus 的内存会被打爆。这条是面试必考点。
+
 package middleware
 
 import (

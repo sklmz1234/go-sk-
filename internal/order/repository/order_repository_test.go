@@ -21,9 +21,7 @@ func newSQLiteDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	// sqlite :memory: 的每个连接是各自独立的空库（不是同一个内存库），
-	// 连接池一旦开了第二条连接，事务/查询会撞"no such table"。
-	// 锁成单连接，所有操作共享同一份 schema 和数据。
+
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
@@ -92,8 +90,6 @@ func TestListByUser(t *testing.T) {
 	assert.Equal(t, int64(2), total)
 }
 
-// UpdateStatus 条件更新：PENDING→CANCELLED 成功一次，第二次（并发双击取消的
-// 数据库侧兜底）RowsAffected==0 翻译成 FailedPrecondition。
 func TestUpdateStatus(t *testing.T) {
 	repo := NewGormRepository(newSQLiteDB(t))
 	ctx := context.Background()
