@@ -1,3 +1,0 @@
-Docker 镜像加速器全是死源（163/docker-cn 早已停服），换成 docker.1ms.run + docker.m.daocloud.io
-容器内 go mod download 失败 → Dockerfile 构建阶段加了 GOPROXY=https://goproxy.cn,direct
-没有 make ，用 winget 装好（GnuWin32 3.81），新开终端直接可用

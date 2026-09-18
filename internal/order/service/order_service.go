@@ -1,11 +1,6 @@
 // Package service 承载 order 服务的业务逻辑，实现 gRPC 生成的 OrderServiceServer。
 //
-// 本包的核心是 CreateOrder 的下单编排——Saga 模式的最小形态：
-// 下单 = product-service 扣库存 + order-service 落订单，跨两个服务两个库，
-// 没有本地事务可救，用"顺序调用 + 失败补偿"保证最终一致：
-// 任一环节失败，把所有已扣的库存逐项 RestoreStock 回补。
-// 补偿本身也可能失败——生产解法是重试 + 对账（本地消息表，留作阶段 4），
-// 这里做到补偿为止，补偿失败记 ERROR 日志留对账线索。
+// 本包的核心是 CreateOrder 的下单编排——Saga 模式的最小形态
 package service
 
 import (
@@ -59,14 +54,8 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderpb.CreateOrderReque
 		}
 	}
 
-	// 身份接力：metadata 不会自动从 incoming 透传到 outgoing，调
-	// product-service 前必须显式再注入一次——下游靠它做"必须带身份"的
-	// 零信任校验，同时扣减日志里能记录是谁的下单触发的（审计）。
 	callCtx := identity.InjectOutgoing(ctx, callerID)
 
-	// 第一步：逐项扣库存。同一商品在 items 里出现多次不去重合并——
-	// 逐次扣减语义等价（条件更新各自原子），补偿也按扣减记录逐笔回补，
-	// 逻辑比分组聚合更直白；聚合优化留给真实业务量级时再谈。
 	var deducted []deductedItem
 	order := &model.Order{
 		UserID: callerID,
@@ -135,10 +124,6 @@ func (s *Service) GetOrder(ctx context.Context, req *orderpb.GetOrderRequest) (*
 		return nil, apperrors.ToGRPCStatus(err)
 	}
 
-	// 越权查订单返回 404 而不是 403：403 等于告诉攻击者"这个订单号存在，
-	// 只是不是你的"，404 不暴露存在性（订单号可枚举，存在性即信息）。
-	// 与商品归属的 403 语义差异是有意的：商品公开可读、存在性不是秘密，
-	// 订单是私密资源，两个决策同源同理。
 	if o.UserID != callerID {
 		s.log.Warn("order access denied",
 			zap.Uint64("order_id", o.ID),
@@ -171,18 +156,7 @@ func (s *Service) ListMyOrders(ctx context.Context, req *orderpb.ListMyOrdersReq
 	return &orderpb.ListMyOrdersResponse{Orders: pbOrders, Total: total}, nil
 }
 
-// CancelOrder（阶段 4 起为全异步回补）：PENDING → CANCELLED 的状态迁移和
-// "每个订单项一条 stock.restore 消息"在同一个本地事务里原子落库
-// （CancelWithOutbox），接口立即返回 CANCELLED；库存由后台 relay 在
-// 秒级内投递回补，投递失败自动指数退避重试（见 internal/order/outbox）。
-//
-// 这是本地消息表的教科书应用：业务状态与消息同生共死，不存在
-// "状态改了消息没记下"或"消息记了状态没改"的中间态。代价是取消后
-// 极短的"库存还没回来"窗口（一个 relay tick，2s）——比起同步补偿
-// "product 一挂取消就漏库存"，这是值得的交换。
-//
-// 幂等键 message_id 在这里生成（UUID，一条消息一个）：product 侧
-// 去重表靠它把 relay 的至少一次投递收敛成恰好一次生效。
+// CancelOrder
 func (s *Service) CancelOrder(ctx context.Context, req *orderpb.CancelOrderRequest) (*orderpb.CancelOrderResponse, error) {
 	callerID, err := identity.FromIncoming(ctx)
 	if err != nil {
@@ -246,12 +220,6 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderpb.CancelOrderReque
 	return &orderpb.CancelOrderResponse{Order: toProto(o)}, nil
 }
 
-// PayOrder（阶段 5B 模拟支付）：PENDING → PAID 的条件更新迁移。
-// 骨架与 CancelOrder 同源（归属 404 + 状态守卫 + 原子条件更新），但没有
-// outbox——模拟支付没有需要联动的外部效果（真实支付接入后，支付成功
-// 的下游动作如清购物车/记销量才需要本地消息表，那是 5C 的完整形态）。
-// 并发安全：repo 的 WHERE status='PENDING' 保证"支付与取消赛跑"时只有
-// 一个能赢，输家拿到 FailedPrecondition（409）。
 func (s *Service) PayOrder(ctx context.Context, req *orderpb.PayOrderRequest) (*orderpb.PayOrderResponse, error) {
 	callerID, err := identity.FromIncoming(ctx)
 	if err != nil {

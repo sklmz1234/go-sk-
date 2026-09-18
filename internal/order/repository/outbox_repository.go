@@ -1,9 +1,5 @@
-// outbox_repository.go：本地消息表（阶段 4）的数据访问。
-//
-// 它和订单 CRUD 的 Repository 拆成两个接口：outbox 的 Claim 是
-// "打开事务 → 锁行 → 把事务句柄交出去 → 调用方收尾"的长事务会话模式，
-// 和 Create/GetByID 这种一问一答的短操作形态完全不同——混在一个
-// 接口里会让订单 repo 的实现和 mock 都背上不必要的负担。
+// outbox_repository.go：本地消息表的数据访问
+
 package repository
 
 import (
@@ -18,36 +14,18 @@ import (
 	"go-ecom-admin/internal/order/model"
 )
 
-// MaxOutboxRetry 是重试上限：达到后消息进 DEAD 死信，不再自动投递。
-// 死信不是失败终点而是"换人处理"的信号——学习项目留 ERROR 日志 +
-// 人工改库重放（重放工具是 4b 的选做）。
+// MaxOutboxRetry 是重试上限
 const MaxOutboxRetry = 10
 
 // OutboxRepository 是本地消息表的 repo 契约。
 type OutboxRepository interface {
-	// CancelWithOutbox 一个事务完成"条件状态迁移 + 批量写 outbox 消息"：
-	// 状态迁移命中（RowsAffected==1）则消息必落库，迁移不命中则消息必不落——
-	// outbox 模式的原子性锚点。并发取消（双击/重试）只有一个事务能命中，
-	// 其余整体回滚返回 FailedPrecondition，不存在"取消成功但消息丢失"的窗口。
 	CancelWithOutbox(ctx context.Context, orderID uint64, from, to string, messages []*model.OutboxMessage) error
-	// ClaimPending 抢一批到期待投递消息（事务内 FOR UPDATE SKIP LOCKED，
-	// 行锁保持到 session 收尾），没有可投递消息时返回 nil session。
+
 	ClaimPending(ctx context.Context, limit int) (*OutboxSession, error)
-	// CountPending 统计 PENDING 积压量（含退避等待中的），供 relay 指标上报。
+
 	CountPending(ctx context.Context) (int64, error)
 }
 
-// OutboxSession 是一次 Claim 拿到的"持锁会话"：ClaimPending 里打开的
-// 事务（连同行锁）由它持有，relay 逐条投递后用 MarkSent/MarkFailed 在
-// 同一事务里改状态，最后 Close 提交。
-//
-// 为什么锁要横跨投递过程：投递期间（最长一个 gRPC 超时 3s）其他副本的
-// Claim 会被 SKIP LOCKED 跳过这些行，同一消息不会被两个副本同时投递
-// （数据库层的分片）。代价是投递期间持有行锁——3s 上限内可接受，
-// 换来的是不需要引入"PROCESSING 中间态 + 租约"的额外复杂度。
-//
-// 崩溃安全：relay 进程若在投递中途死掉，事务未提交、连接断开自动回滚，
-// 消息回到 PENDING 等下一轮——"至少一次"语义的一部分。
 type OutboxSession struct {
 	// Messages 是本轮抢到的消息（按 id 升序，FIFO 投递）。
 	Messages []model.OutboxMessage
@@ -71,9 +49,6 @@ func (s *OutboxSession) MarkSent(ctx context.Context, id uint64) error {
 	return nil
 }
 
-// MarkFailed 记录一次投递失败：retry_count+1、按指数退避推远 next_retry_at
-// （2^retry 秒，封顶 5 分钟）；达到 MaxOutboxRetry 则置 DEAD 死信。
-// 返回 dead=true 提示调用方记 ERROR 日志（repo 层不持有 logger）。
 func (s *OutboxSession) MarkFailed(ctx context.Context, id uint64, cause error) (dead bool, err error) {
 	if s.tx == nil {
 		return false, apperrors.Internal("outbox session already closed", nil)
@@ -99,8 +74,7 @@ func (s *OutboxSession) MarkFailed(ctx context.Context, id uint64, cause error) 
 		dead = true
 	} else {
 		// 指数退避：2^retry 秒封顶 5 分钟（1 次失败 2s、2 次 4s……
-		// 8 次 256s、9 次 300s）。退避的意义：对端故障时把重试频率
-		// 从"每 2s 撞一次墙"衰减下来，给恢复留窗口，也少打日志。
+		// 8 次 256s、9 次 300s）。
 		backoff := time.Duration(1<<newRetry) * time.Second
 		if backoff > 5*time.Minute {
 			backoff = 5 * time.Minute
@@ -132,9 +106,6 @@ func (s *OutboxSession) MarkDead(ctx context.Context, id uint64) error {
 	return nil
 }
 
-// Close 提交会话事务（标记过的 SENT/FAILED/DEAD 一并生效），幂等可重入。
-// 前置的 claim 查询不产生写，所以"没有标记任何消息就 Close"是合法的
-// 空提交。提交失败时事务已回滚，消息回到 PENDING——at-least-once。
 func (s *OutboxSession) Close() error {
 	if s.tx == nil {
 		return nil
@@ -144,8 +115,6 @@ func (s *OutboxSession) Close() error {
 	return err
 }
 
-// ClaimPending 的实现：手动 Begin（不走 gorm.Transaction——它在回调
-// 返回时就提交/回滚，会把行锁提前放掉，会话模式必须自己管事务生命周期）。
 func (r *gormRepository) ClaimPending(ctx context.Context, limit int) (*OutboxSession, error) {
 	tx := r.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
@@ -157,9 +126,6 @@ func (r *gormRepository) ClaimPending(ctx context.Context, limit int) (*OutboxSe
 		Order("id ASC").
 		Limit(limit)
 
-	// FOR UPDATE SKIP LOCKED 只在 MySQL 8.0+ 存在（这正是当初选 MySQL 8.0
-	// 的回报之一）；sqlite（单测）没有多副本并发的场景，跳过锁子句照样
-	// 测得到状态机。方言守卫而不是 try-error：SQL 方言差异应该显式声明。
 	if tx.Dialector.Name() == "mysql" {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 	}
@@ -177,9 +143,6 @@ func (r *gormRepository) ClaimPending(ctx context.Context, limit int) (*OutboxSe
 	return &OutboxSession{Messages: msgs, tx: tx}, nil
 }
 
-// NewOutboxRepository 与 NewGormRepository 包的是同一个 gormRepository——
-// 拆开两个构造函数只是让两个接口各自的装配意图清晰（order repo 管
-// 订单聚合，outbox repo 管消息表），实现层共享连接池和迁移路径。
 func NewOutboxRepository(db *gorm.DB) OutboxRepository {
 	return &gormRepository{db: db}
 }

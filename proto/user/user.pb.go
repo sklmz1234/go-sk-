@@ -4,8 +4,6 @@
 // 	protoc        v6.33.1
 // source: proto/user/user.proto
 
-// package 与 go_package 分开声明：package 是 proto 命名空间（跨语言通用），
-// go_package 只影响生成的 Go 代码放在哪个 import path / 用什么包名。
 
 package userpb
 

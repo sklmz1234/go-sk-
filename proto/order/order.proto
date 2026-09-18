@@ -4,20 +4,14 @@ package order;
 
 option go_package = "go-ecom-admin/proto/order;orderpb";
 
-// OrderService 是 order-service 对外暴露的 gRPC 契约，供 api-gateway 调用。
-// 下单编排（调 product-service 扣库存、失败补偿回补）在 order-service 内部完成，
-// 网关只看到"创建订单"这一个动作。
+
 service OrderService {
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
   rpc ListMyOrders(ListMyOrdersRequest) returns (ListMyOrdersResponse);
-  // CancelOrder 在阶段 3b 实现：PENDING → CANCELLED 单方向流转 + RestoreStock
-  // 回补库存。契约先定在这里，避免 3b 再改 proto 重新生成。
+
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
-  // PayOrder（阶段 5B 模拟支付）：PENDING → PAID 单方向流转。没有真实支付
-  // 渠道，"支付成功"就是这一次状态迁移——条件更新（WHERE status='PENDING'）
-  // 保证并发支付/取消只有一个能命中。真实支付对接后，这里换成
-  // "支付回调驱动"的迁移入口即可，状态机本身不用动。
+
   rpc PayOrder(PayOrderRequest) returns (PayOrderResponse);
 }
 

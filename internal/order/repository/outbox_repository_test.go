@@ -1,8 +1,5 @@
 // outbox_repository 单元测试：sqlite :memory: 跑真实 GORM 逻辑。
-//
-// 考点边界（阶段 4 方案定的）：sqlite 没有 FOR UPDATE SKIP LOCKED，
-// 多副本并发分片的正确性不在单测覆盖（留给 compose/K8s 验收）；
-// 这里只测状态机——CancelWithOutbox 的原子性、退避计算、DEAD 流转。
+
 package repository
 
 import (

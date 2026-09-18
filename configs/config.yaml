@@ -4,7 +4,7 @@ app:
 
 log:
   level: info
-  encoding: console # 本地开发用 console 方便肉眼看；生产建议改成 json
+  encoding: console # 本地开发用 console
   output_paths:
     - stdout
 
@@ -19,13 +19,13 @@ mysql:
   max_open_conns: 100
 
 # product-service 读缓存用的 Redis。容器环境里用 REDIS_ADDR 覆盖成 service 名
-# （和 MYSQL_HOST 同一套 Viper AutomaticEnv 机制）。
+
 redis:
   addr: 127.0.0.1:6379
   password: ""
   db: 0
 
-# 商品搜索引擎（阶段 5A）。容器环境里用 ELASTICSEARCH_ADDR 覆盖成 service 名。
+# 商品搜索引擎。容器环境里用 ELASTICSEARCH_ADDR 覆盖成 service 名。
 # 连不上时 product-service 降级为 MySQL LIKE 搜索（搜索引擎是加速层不是
 # 正确性依赖，和 Redis 缓存同一原则），所以这个地址配错不会让服务起不来。
 elasticsearch:
@@ -33,7 +33,7 @@ elasticsearch:
   index: products
 
 # 开发环境用的默认 secret，生产环境务必通过 JWT_SECRET 环境变量覆盖
-# （Viper 的 AutomaticEnv 会把 "." 换成 "_"，jwt.secret -> JWT_SECRET）。
+
 jwt:
   secret: dev-only-change-me-in-production
   expire_hours: 24
@@ -54,7 +54,7 @@ grpc_client:
   product_service_addr: 127.0.0.1:9002
   order_service_addr: 127.0.0.1:9003
 
-# 链路追踪（阶段 2D）。默认开着：本地最常用的形态是 docker compose 全栈
+# 链路追踪（默认开着：本地最常用的形态是 docker compose 全栈
 # （Jaeger 起在 compose 网络里），宿主机裸 go run 时端口是通的（4317 已映射）。
 # 完全不想起 Jaeger 就 TELEMETRY_ENABLED=false，SDK 不初始化、零开销。
 # sample_ratio 本地 1.0 全采；生产参考值 0.1——全采的成本（存储/网络/噪声）

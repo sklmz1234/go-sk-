@@ -1,9 +1,3 @@
-// Package errors 定义跨分层、跨传输协议（gRPC / HTTP）复用的业务错误类型。
-//
-// 设计决策：service/repository 层只关心「发生了什么业务错误」（找不到记录、参数非法……），
-// 不应该关心自己最终会被 gRPC server 还是 Gin handler 调用。所以业务错误码
-// 和 gRPC codes.Code / HTTP status 是分离的，转换只发生在最外层（gateway 的
-// handler、user/product-service 的 grpc server 入口）。
 package errors
 
 import (
@@ -29,9 +23,6 @@ const (
 	CodeFailedPrecondition
 )
 
-// AppError 是本项目统一的错误载体：Code 供上层做分支判断，
-// Message 是可以直接展示给客户端的文案，Err 保留底层原始错误用于日志排查
-// （但不会经由 gRPC/HTTP 返回给客户端，避免泄露内部实现细节，例如 SQL 报错信息）。
 type AppError struct {
 	Code    Code
 	Message string
@@ -69,31 +60,18 @@ func Internal(message string, cause error) *AppError {
 	return New(CodeInternal, message, cause)
 }
 
-// Unauthorized 用于「未认证/认证失败」：JWT 缺失、过期、签名不对，或者
-// 登录时用户名/密码不匹配。故意不区分"用户不存在"和"密码错误"，调用方
-// 传的 message 也应该保持模糊（例如统一用 "invalid username or password"），
-// 避免攻击者通过错误信息差异枚举出哪些用户名是注册过的。
 func Unauthorized(message string, cause error) *AppError {
 	return New(CodeUnauthorized, message, cause)
 }
 
-// Forbidden 用于「已认证但无权操作」：身份是真的（JWT 有效、user_id 可信），
-// 但这个身份对目标资源没有权限——典型场景是"想改别人创建的商品"。
-// 和 Unauthorized 的区别要在响应码上体现出来：401 是"你是谁？"，
-// 403 是"我知道你是谁，但你不能这么做"。
 func Forbidden(message string, cause error) *AppError {
 	return New(CodeForbidden, message, cause)
 }
 
-// FailedPrecondition 用于「请求本身合法，但资源的当前状态不允许这个操作」——
-// 典型场景是库存不足：不是配额问题（那是 ResourceExhausted），也不是参数错误
-// （InvalidArgument），而是"你买的这件商品现在没货了"。HTTP 侧映射 409 Conflict。
 func FailedPrecondition(message string, cause error) *AppError {
 	return New(CodeFailedPrecondition, message, cause)
 }
 
-// ToGRPCStatus 供 user-service / product-service 的 gRPC handler 使用，
-// 把内部 AppError 转换成客户端能识别的标准 gRPC status。
 func ToGRPCStatus(err error) error {
 	if err == nil {
 		return nil
@@ -124,9 +102,6 @@ func ToGRPCStatus(err error) error {
 	}
 }
 
-// ToHTTPStatus 供 api-gateway 的 Gin handler 使用。gateway 从下游 gRPC 服务
-// 收到的是 gRPC status error，所以这里按 gRPC code 而不是 AppError.Code 判断——
-// gateway 从不直接产生 AppError，它只是转译下游的错误。
 func ToHTTPStatus(err error) (int, string) {
 	st, ok := status.FromError(err)
 	if !ok {

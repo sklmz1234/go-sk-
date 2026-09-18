@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"go.uber.org/zap"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/zap"
 
 	"go-ecom-admin/pkg/config"
 	"go-ecom-admin/pkg/logger"
@@ -50,9 +50,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// 链路追踪（阶段 2D）：网关是整条链路的入口 span 产生地。初始化失败
-	// 选择 Fatal——追踪地址配错属于部署错误，带着错误配置"静默降级"会让
-	// 人误以为追踪正常，排障时才发现 Jaeger 上一条数据都没有。
+	// 链路追踪
 	var tracerProvider *sdktrace.TracerProvider
 	var meterProvider *sdkmetric.MeterProvider
 	var metricsHandler http.Handler
@@ -65,8 +63,7 @@ func main() {
 		if err != nil {
 			log.Fatal("init telemetry", zap.Error(err))
 		}
-		// 指标支柱（阶段 2D 下半程）：与 trace 同一个 OTel SDK，区别是
-		// pull 模式——进程内挂 /metrics 端点，Prometheus 定时来拉。
+
 		// 全局 MeterProvider 一设，otelgrpc 客户端的 gRPC 指标也自动出现。
 		meterProvider, metricsHandler, err = telemetry.SetupMetrics()
 		if err != nil {
@@ -77,8 +74,7 @@ func main() {
 			zap.Float64("sample_ratio", cfg.Telemetry.SampleRatio))
 	}
 
-	// grpc.NewClient 是非阻塞的：即使 user-service / product-service 还没启动，
-	// 这里也不会报错，真正的连接尝试发生在第一次 RPC 调用时。
+	// grpc.NewClient 是非阻塞的
 	userClient, err := repository.NewUserClient(cfg.GRPCClient.UserServiceAddr, log)
 	if err != nil {
 		log.Fatal("failed to create user-service client", zap.Error(err))
@@ -110,15 +106,14 @@ func main() {
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			log.Error("graceful shutdown failed", zap.Error(err))
 		}
-		// HTTP 停完再 flush trace：把批处理器里还没发出去的 span 冲给
-		// Jaeger——不做这步，进程最后几秒的请求在链路系统里"凭空消失"。
+		// HTTP 停完再 flush trace
 		if tracerProvider != nil {
 			if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
 				log.Error("trace provider shutdown", zap.Error(err))
 			}
 		}
 		// pull 模式的指标没有待发缓冲，Shutdown 只是停掉收集协程、
-		// 干净退出（不像 trace 那样关系数据丢失）。
+		// 干净退出
 		if meterProvider != nil {
 			if err := meterProvider.Shutdown(shutdownCtx); err != nil {
 				log.Error("meter provider shutdown", zap.Error(err))

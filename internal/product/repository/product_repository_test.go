@@ -1,11 +1,5 @@
 // product 服务 repository 层单元测试：sqlite :memory: 跑真实 GORM 逻辑。
-//
-// 本文件的重点考点：
-//   - Update/Delete 用 RowsAffected==0 判 NotFound（一次 SQL 完成存在性
-//     检查 + 操作，无 TOCTOU 竞态）——RowsAffected 是 GORM 核心行为，
-//     方言无关，所以 sqlite 上验证即可。
-//   - Updates(map) 的整体替换语义。
-//   - List 的 offset/limit 分页和非法参数兜底（page<1、pageSize<1）。
+
 package repository
 
 import (
@@ -27,9 +21,7 @@ import (
 
 func newSQLiteDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	// TranslateError 与生产 main.go 的 gorm.Config 对齐：sqlite 唯一约束
-	// 冲突也要翻译成 gorm.ErrDuplicatedKey，RestoreStockIdempotent 的
-	// 去重分支才能在单测里被真实触发。
+
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Product{}, &model.StockRestore{}))
@@ -116,14 +108,6 @@ func TestRestoreStock(t *testing.T) {
 	})
 }
 
-// TestDeductStock_Concurrent 是防超卖的核心测试：stock=10 的商品，
-// 50 个 goroutine 各抢 1 件，断言成功数恰好 10、stock 终值 0。
-//
-// sqlite 注意事项：glebarez 的 :memory: 每个连接是独立一库，并发测试必须
-// SetMaxOpenConns(1) 让所有 goroutine 共享同一个连接（同一个库），否则会报
-// "no such table"。串行执行不影响测试目标——原子性由条件更新的 WHERE
-// stock >= ? 保证而不是由并发度保证，50 个 UPDATE 串行跑完仍然只有 10 个
-// 能满足条件。对 MySQL 真实行锁行为的验证留给集成测试（docker 起 MySQL）。
 func TestDeductStock_Concurrent(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -231,9 +215,6 @@ func TestList(t *testing.T) {
 	})
 }
 
-// RestoreStockIdempotent（阶段 4 幂等回补）的核心考点：
-// 同一 message_id 重复调用库存只加一次——去重表主键冲突即"已生效过"，
-// 这是把 relay 的至少一次投递收敛成恰好一次的幂等另一半。
 func TestRestoreStockIdempotent(t *testing.T) {
 	repo := NewGormRepository(newSQLiteDB(t))
 	ctx := context.Background()
@@ -252,8 +233,8 @@ func TestRestoreStockIdempotent(t *testing.T) {
 	assert.Equal(t, int32(16), got.Stock, "不同 message_id 是另一笔回补，正常生效")
 }
 
-// 商品不存在时返回 NotFound 且整体回滚——去重记录也不能留：
-// 回补没生效就留"已处理"记录，会挡住未来合法的同名消息重投。
+// 商品不存在时返回 NotFound 且整体回滚——去重记录也不能留
+
 func TestRestoreStockIdempotent_NotFoundRollsBack(t *testing.T) {
 	db := newSQLiteDB(t)
 	repo := NewGormRepository(db)

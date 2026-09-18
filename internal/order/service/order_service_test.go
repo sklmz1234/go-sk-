@@ -1,11 +1,4 @@
-// order 服务的 service 层单元测试：mock 掉 repo 和 product client，
-// 只测下单编排的业务规则——这是全项目 Saga 补偿逻辑的核心考场。
-//
-// 覆盖路径：
-//   - 多 item 全成功：价格快照落进 OrderItem，总额 = Σ 快照价 × 数量；
-//   - 第 2 项扣减失败 → 回补第 1 项，订单不落库；
-//   - 落库失败 → 回补全部已扣项；
-//   - 越权查订单 → 404（不暴露存在性）。
+// order 服务的 service 层单元测试
 package service
 
 import (
@@ -202,7 +195,7 @@ func TestGetOrder_Success(t *testing.T) {
 	svc, repo, _, _ := newTestService(t)
 	repo.EXPECT().GetByID(mock.Anything, uint64(1001)).Return(&model.Order{
 		ID: 1001, UserID: 42, Status: model.StatusPending, TotalCents: 39800,
-		Items: []model.OrderItem{{ProductID: 1, ProductName: "机械键盘", Quantity: 2, UnitPriceCents: 19900}},
+		Items:     []model.OrderItem{{ProductID: 1, ProductName: "机械键盘", Quantity: 2, UnitPriceCents: 19900}},
 		CreatedAt: time.Now(),
 	}, nil)
 

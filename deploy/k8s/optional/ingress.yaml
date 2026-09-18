@@ -1,35 +1,4 @@
-# Ingress（可选，默认不用）：集群统一入口，按域名路由到 Service。
-# 本目录不放控制器，因为 kubectl apply -f deploy/k8s 不递归，optional/
-# 不会被误装。
-#
-# ============ 实测记录（Docker Desktop 内置 kind，v1.31.1 三节点）============
-# 前置条件：集群里得先装 Ingress 控制器（kind 版清单，带 hostPort 80/443）：
-#
-#   # 直接 apply 远程 URL 在本机报过 "unexpected EOF"，先下载再 apply 稳妥
-#   curl -fsSL -o /tmp/ingress-nginx.yaml \
-#     https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.12.1/deploy/static/provider/kind/deploy.yaml
-#   kubectl apply -f /tmp/ingress-nginx.yaml
-#
-# 坑 1（FailedScheduling）：kind 版清单要求节点带 ingress-ready=true 标签，
-# Docker Desktop 内置 kind 创建的节点默认没有，控制器 Pod 会一直 Pending：
-#
-#   kubectl label node desktop-control-plane ingress-ready=true
-#
-# 坑 2（本机 :80 直连不通）：原生 kind 用 extraPortMappings 把节点容器
-# 的 80 发布到宿主机；Docker Desktop 内置 kind 没有这个口子，hostPort 80
-# 只到节点容器为止，不落到 Windows。所以本机验证用 port-forward：
-#
-#   kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 18080:80
-#   curl --noproxy '*' -H "Host: ecom.local" http://localhost:18080/api/v1/products
-#
-# 坑 3（测域名隔离别用 /healthz）：控制器兜底 server 自带
-# location /healthz { return 200; }（控制器自身健康探针用），任意域名打
-# /healthz 都返回 200 空体——这不代表路由命中了。要验证域名隔离请用业务
-# 路径。实测结果（Host 头方式，--noproxy 防系统代理干扰）：
-#
-#   -H "Host: ecom.local"     /api/v1/products  → 200 命中本 Ingress
-#   -H "Host: wrong.local"    /api/v1/products  → 404 兜底 server 接住
-#
+
 # 不装控制器的话用端口转发直接访问网关（零依赖）：
 #   kubectl port-forward -n ecom svc/api-gateway 8080:8080
 # =============================================================================
@@ -41,7 +10,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: ecom.local # 配 hosts 文件：127.0.0.1 ecom.local（本机 port-forward 验证时用 Host 头即可，不必真改 hosts）
+    - host: ecom.local # 配 hosts 文件：127.0.0.1 ecom.local。本机 port-forward 验证时用 Host 头
       http:
         paths:
           - path: /

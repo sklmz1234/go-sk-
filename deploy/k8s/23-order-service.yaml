@@ -1,4 +1,4 @@
-# order-service（阶段 3）：与 user/product 结构完全对称（讲解范本见 20-user-service.yaml）。
+# order-service与 user/product 结构完全对称（讲解范本见 20-user-service.yaml）。
 # 差异：端口 9003；不连 Redis（订单没有读缓存层——写多、按人隔离，缓存收益低）；
 # 调 product-service 的地址来自 app-config 的 GRPC_CLIENT_PRODUCT_SERVICE_ADDR。
 #

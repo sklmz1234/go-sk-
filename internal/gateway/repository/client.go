@@ -1,8 +1,5 @@
 // Package repository 是 api-gateway 的"数据访问层"——只不过它的数据源不是数据库，
-// 而是别的微服务。这是 Repository 模式的一个常被忽略的泛化：只要一样东西负责
-// "把外部数据取回来"，无论底层是 SQL、Redis 还是另一个服务的 gRPC 接口，
-// 都可以用同一个接口 + 实现的模式封装，让 service 层不用关心通信细节
-// （拨号、超时、重试都缩在这里）。
+// 而是别的微服务。。
 package repository
 
 import (
@@ -30,12 +27,6 @@ type UserClient struct {
 	breaker *gobreaker.CircuitBreaker
 }
 
-// otelStatsHandler 是两个 gRPC 客户端共用的 stats handler：每次 RPC 把
-// 当前 trace 上下文（traceparent）注入 gRPC metadata，并在客户端侧记一条
-// 出站 span——没有它，网关的 span 和下游服务的 span 就断在进程边界上，
-// Jaeger 里出现的是两条独立链路而不是一条瀑布。
-// 用 stats.Handler 而不是旧的 UnaryClientInterceptor：interceptor 方案拿
-// 不到连接级事件，且官方已标记 deprecated。
 var otelStatsHandler = otelgrpc.NewClientHandler()
 
 // NewUserClient 用 target（形如 "127.0.0.1:9001"）拨号 user-service。

@@ -48,7 +48,7 @@ func (s *Service) Login(ctx context.Context, req model.LoginRequest) (*model.Log
 	return &model.LoginResponseDTO{Token: token, User: userToDTO(u)}, nil
 }
 
-// GetRandomAddress（阶段 5B）：随机 mock 收货信息，读公开数据池不需要身份。
+// GetRandomAddress
 func (s *Service) GetRandomAddress(ctx context.Context) (*model.AddressDTO, error) {
 	a, err := s.userClient.GetRandomAddress(ctx)
 	if err != nil {
@@ -70,12 +70,6 @@ func (s *Service) GetProduct(ctx context.Context, id uint64) (*model.ProductDTO,
 	return productToDTO(p), nil
 }
 
-// CreateProduct / UpdateProduct / DeleteProduct 是写路径，必须带调用方身份——
-// userID 由 handler 从 gin.Context 取（JWT 中间件已验过签），这里注入 metadata。
-// 身份走 metadata 而不是 proto 字段：身份是"横切关注点"，和 JWT 放在 HTTP
-// header 而不是塞 body 是同一个道理——每个 proto message 都加一个 user_id
-// 字段既重复又容易漏，metadata 由调用链统一注入，业务消息保持干净。
-// 读路径（Get/List）是公开的，不需要身份。
 func (s *Service) CreateProduct(ctx context.Context, userID uint64, req model.CreateProductRequest) (*model.ProductDTO, error) {
 	// 元 -> 分：四舍五入到分，避免浮点数直接乘出现的精度误差被带进下游服务。
 	priceCents := int64(req.PriceYuan*100 + 0.5)
